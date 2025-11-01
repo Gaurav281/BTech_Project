@@ -1,3 +1,4 @@
+//src/pages/WorkflowTab/hooks/useWorkflowIntegrations.jsx
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../../context/AuthContext';
 import { integrationsAPI } from '../../../api/api';

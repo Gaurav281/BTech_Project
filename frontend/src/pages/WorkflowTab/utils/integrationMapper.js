@@ -1,5 +1,5 @@
 // Maps services to their required integrations and parameters
-
+//src/pages/WorkflowTab/utils/integrationMapper.js
 export const serviceIntegrationMap = {
   'telegram-send': {
     integrationService: 'telegram',

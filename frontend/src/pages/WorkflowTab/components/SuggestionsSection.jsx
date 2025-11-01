@@ -1,3 +1,4 @@
+//src/pages/WorkflowTab/components/SuggestionsSection.jsx
 import React from 'react';
 
 const SuggestionsSection = ({ workflowGeneration }) => {

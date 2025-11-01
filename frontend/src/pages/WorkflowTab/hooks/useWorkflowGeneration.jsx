@@ -19,8 +19,7 @@ export const useWorkflowGeneration = () => {
     setEdges, 
     setWorkflowName, 
     addTerminalLog,
-    nodes,
-    edges
+    clearWorkflow
   } = useWorkflowStore();
 
   useEffect(() => {
@@ -71,27 +70,29 @@ export const useWorkflowGeneration = () => {
       if (aiProvider === 'huggingface') {
         response = await workflowGenerationAPI.generateCompleteWorkflow({
           prompt,
-          model: huggingFaceModel,
-          userIntegrations
+          model: huggingFaceModel
         });
       } else {
         response = await aiAPI.generateWorkflow({
           prompt,
-          provider: aiProvider,
-          userIntegrations
+          provider: aiProvider
         });
       }
 
-      const { workflow, modelUsed, enhanced, integrationSetup, missingIntegrations } = response.data;
+      const result = response.data;
 
-      if (workflow && workflow.nodes) {
-        // Process AI-generated workflow
-        const processedWorkflow = processAIWorkflow(workflow, userIntegrations);
+      if (result.success && result.workflow) {
+        // Clear existing workflow first
+        clearWorkflow();
+        
+        // Process and set the new workflow
+        const processedWorkflow = processAIWorkflow(result.workflow, userIntegrations);
+        
         setNodes(processedWorkflow.nodes);
         setEdges(processedWorkflow.edges);
-        setWorkflowName(workflow.name || `Generated Workflow - ${new Date().toLocaleTimeString()}`);
+        setWorkflowName(result.workflow.name || `Generated: ${prompt.substring(0, 30)}...`);
         
-        addTerminalLog('✅ Enhanced workflow generated successfully!');
+        addTerminalLog('✅ Workflow generated successfully!');
         addTerminalLog(`📋 Created ${processedWorkflow.nodes.length} nodes and ${processedWorkflow.edges.length} connections`);
 
         // Show node details
@@ -102,15 +103,10 @@ export const useWorkflowGeneration = () => {
           }
         });
 
-        // Show integration status
-        if (missingIntegrations && missingIntegrations.length > 0) {
-          addTerminalLog('⚠️ Missing integrations:', 'warning');
-          missingIntegrations.forEach(integration => {
-            addTerminalLog(`   • ${integration.service}: ${integration.instruction || 'Setup required'}`);
-          });
-        }
-
         showPopup('✅ Workflow generated successfully!', 'success');
+        
+        // Clear prompt after successful generation
+        setPrompt('');
       } else {
         throw new Error('Invalid workflow structure received');
       }
@@ -124,7 +120,7 @@ export const useWorkflowGeneration = () => {
     } finally {
       setIsGenerating(false);
     }
-  }, [prompt, aiProvider, huggingFaceModel, userIntegrations, setNodes, setEdges, setWorkflowName, addTerminalLog]);
+  }, [prompt, aiProvider, huggingFaceModel, userIntegrations, setNodes, setEdges, setWorkflowName, addTerminalLog, clearWorkflow]);
 
   const handleEnhancedRuleBasedWorkflow = useCallback(() => {
     addTerminalLog('🔄 Using enhanced rule-based workflow generation...');
@@ -134,15 +130,33 @@ export const useWorkflowGeneration = () => {
       const nodes = [];
       const edges = [];
       
-      // Always start with trigger
-      nodes.push(generateNodeWithParameters('trigger', 1, { x: 100, y: 100 }));
+      // Smart trigger detection - only add if needed
+      const needsTrigger = !lowerPrompt.includes('send') && 
+                          !lowerPrompt.includes('post') && 
+                          !lowerPrompt.includes('execute');
 
-      // Detect services from prompt using integration mapping
-      let nodeCount = 2;
+      if (needsTrigger) {
+        nodes.push(generateNodeWithParameters('trigger', 1, { x: 100, y: 100 }));
+      }
+
+      // Detect services from prompt
+      let nodeCount = needsTrigger ? 2 : 1;
       const detectedServices = detectServicesFromPrompt(lowerPrompt, userIntegrations);
       
       detectedServices.forEach((service, index) => {
-        nodes.push(generateNodeWithParameters(service, nodeCount, { x: 400, y: 100 + (index * 100) }));
+        const integration = userIntegrations.find(i => i.service === service);
+        const node = generateNodeWithParameters(service, nodeCount, { x: 400, y: 100 + (index * 100) });
+        
+        // Auto-fill integration parameters if available
+        if (integration && integration.isValid) {
+          node.data.parameters = {
+            ...node.data.parameters,
+            ...getIntegrationParameters(service, integration.config)
+          };
+          node.data.parametersConfigured = true;
+        }
+        
+        nodes.push(node);
         nodeCount++;
       });
 
@@ -217,7 +231,7 @@ const processAIWorkflow = (workflow, userIntegrations) => {
           // Auto-fill integration parameters if available
           ...(hasValidIntegration ? getIntegrationParameters(service, integration.config) : {})
         },
-        parametersConfigured: hasValidIntegration && Object.keys(enhancedNode.data.parameters).length > 0,
+        parametersConfigured: hasValidIntegration || Object.keys(enhancedNode.data.parameters).length > 0,
         integrationStatus: {
           configured: !!integration,
           valid: integration?.isValid || false
@@ -248,30 +262,27 @@ const detectServicesFromPrompt = (prompt, userIntegrations) => {
   const availableServices = userIntegrations.map(i => i.service);
   
   // Service detection logic
-  if (prompt.includes('telegram') && prompt.includes('send') && availableServices.includes('telegram-send')) {
-    services.push('telegram-send');
+  if (prompt.includes('telegram') && prompt.includes('send')) {
+    services.push('telegram');
   }
-  if (prompt.includes('telegram') && prompt.includes('monitor') && availableServices.includes('telegram-monitor')) {
-    services.push('telegram-monitor');
-  }
-  if ((prompt.includes('gmail') || prompt.includes('email')) && availableServices.includes('gmail')) {
+  if ((prompt.includes('gmail') || prompt.includes('email'))) {
     services.push('gmail');
   }
-  if (prompt.includes('slack') && availableServices.includes('slack')) {
+  if (prompt.includes('slack')) {
     services.push('slack');
   }
-  if ((prompt.includes('sheet') || prompt.includes('spreadsheet')) && availableServices.includes('google-sheets')) {
+  if ((prompt.includes('sheet') || prompt.includes('spreadsheet'))) {
     services.push('google-sheets');
   }
-  if ((prompt.includes('database') || prompt.includes('mysql')) && availableServices.includes('mysql')) {
+  if ((prompt.includes('database') || prompt.includes('mysql'))) {
     services.push('mysql');
   }
-  if (prompt.includes('webhook') && availableServices.includes('webhook')) {
+  if (prompt.includes('webhook')) {
     services.push('webhook');
   }
 
   // Default to webhook if no specific services detected
-  if (services.length === 0 && availableServices.includes('webhook')) {
+  if (services.length === 0) {
     services.push('webhook');
   }
 
@@ -281,16 +292,9 @@ const detectServicesFromPrompt = (prompt, userIntegrations) => {
 // Get integration parameters from config
 const getIntegrationParameters = (service, config) => {
   const parameterMapping = {
-    'telegram-send': {
+    'telegram': {
       botToken: config.botToken,
       chatId: config.chatId
-    },
-    'telegram-monitor': {
-      botToken: config.botToken,
-      chatId: config.chatId
-    },
-    'gmail': {
-      // OAuth tokens handled differently
     },
     'slack': {
       webhookUrl: config.webhookUrl

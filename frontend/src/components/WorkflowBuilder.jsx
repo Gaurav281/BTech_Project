@@ -53,8 +53,8 @@ const WorkflowBuilder = () => {
   // Update store when local state changes (debounced)
   useEffect(() => {
     const timeoutId = setTimeout(() => {
-      if (JSON.stringify(nodes) !== JSON.stringify(safeStoreNodes) || 
-          JSON.stringify(edges) !== JSON.stringify(safeStoreEdges)) {
+      if (JSON.stringify(nodes) !== JSON.stringify(safeStoreNodes) ||
+        JSON.stringify(edges) !== JSON.stringify(safeStoreEdges)) {
         useWorkflowStore.setState({ nodes, edges });
       }
     }, 100);
@@ -114,9 +114,13 @@ const WorkflowBuilder = () => {
             minZoom={0.2}
             maxZoom={2}
             defaultViewport={{ x: 0, y: 0, zoom: 1 }}
+            nodesDraggable={true}
+            nodesConnectable={true}
+            elementsSelectable={true}
+            selectNodesOnDrag={true}
           >
             <Controls />
-            <MiniMap 
+            <MiniMap
               nodeColor="#6b7280"
               maskColor="rgba(255, 255, 255, 0.1)"
               position="bottom-right"

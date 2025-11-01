@@ -4,6 +4,7 @@ import Workflow from '../models/Workflow.js';
 import ExecutionLog from '../models/ExecutionLog.js';
 import { authenticateToken } from '../middleware/auth.js';
 import Integration from '../models/Integration.js';
+import WorkflowExecutor from '../services/WorkflowExecutor.js';
 
 const router = express.Router();
 
@@ -361,7 +362,6 @@ function requiresIntegration(service) {
 // Background execution
 async function executeWorkflowInBackground(workflow, userId, executionId) {
   try {
-    // FIXED: Use correct Integration model
     const userIntegrations = await Integration.find({ user: userId });
     const executionLog = await ExecutionLog.findById(executionId);
     
@@ -373,7 +373,7 @@ async function executeWorkflowInBackground(workflow, userId, executionId) {
     });
     await executionLog.save();
     
-    // Execute each node
+    // Execute each node using WorkflowExecutor
     for (const node of workflow.nodes) {
       try {
         executionLog.logs.push({
@@ -385,7 +385,9 @@ async function executeWorkflowInBackground(workflow, userId, executionId) {
         await executionLog.save();
         
         const integration = userIntegrations.find(i => i.service === node.data.service);
-        const result = await executeNode(node, integration?.config || {});
+        
+        // USE WORKFLOW EXECUTOR INSTEAD OF DIRECT FUNCTION CALLS
+        const result = await WorkflowExecutor.executeNode(node, integration?.config || {});
         
         executionLog.logs.push({
           level: 'info',
@@ -429,45 +431,6 @@ async function executeWorkflowInBackground(workflow, userId, executionId) {
     });
     await executionLog.save();
   }
-}
-
-// Node execution
-async function executeNode(node, config) {
-  switch (node.data.service) {
-    case 'telegram':
-      return await executeTelegramNode(node, config);
-    case 'gmail':
-      return await executeGmailNode(node, config);
-    case 'slack':
-      return await executeSlackNode(node, config);
-    case 'google-sheets':
-      return await executeGoogleSheetsNode(node, config);
-    default:
-      // Simulate execution for other nodes
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      return { success: true, message: 'Node executed successfully' };
-  }
-}
-
-async function executeTelegramNode(node, config) {
-  const { botToken, chatId } = config;
-  const { message } = node.data.parameters;
-  
-  const response = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text: message,
-      parse_mode: 'HTML'
-    })
-  });
-
-  if (!response.ok) {
-    throw new Error('Failed to send Telegram message');
-  }
-
-  return { success: true, message: 'Telegram message sent successfully' };
 }
 
 // Get execution logs for user

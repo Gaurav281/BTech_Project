@@ -1,3 +1,4 @@
+//src/pages/WorkflowTab/components/IntegrationStatus.jsx
 import React from 'react';
 
 const IntegrationStatus = ({ userIntegrations }) => {

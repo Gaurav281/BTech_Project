@@ -1,4 +1,3 @@
-//server/Services/workflowExecutor.js
 import { google } from 'googleapis';
 import TelegramBot from 'node-telegram-bot-api';
 import { WebClient } from '@slack/web-api';
@@ -44,7 +43,7 @@ export class WorkflowExecutor {
     const { parameters } = node.data;
     const { botToken, chatId } = config;
 
-    if (!botToken || botToken === 'YOUR_BOT_TOKEN_HERE') {
+    if (!botToken || botToken === 'YOUR_BOT_TOKEN') {
       throw new Error('Telegram bot token not configured');
     }
 
@@ -67,19 +66,75 @@ export class WorkflowExecutor {
     }
   }
 
+  // REAL GMAIL EXECUTION - FIXED VERSION
+  async executeGmailNode(node, config, context) {
+    const { parameters } = node.data;
+    const { tokens } = config;
+
+    if (!tokens || !tokens.access_token) {
+      throw new Error('Gmail not authenticated - Please configure Gmail integration first');
+    }
+
+    try {
+      const oauth2Client = new google.auth.OAuth2(
+        process.env.GOOGLE_CLIENT_ID,
+        process.env.GOOGLE_CLIENT_SECRET
+      );
+      
+      oauth2Client.setCredentials(tokens);
+
+      const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+
+      // Create email message
+      const emailLines = [
+        `To: ${this.interpolateParameters(parameters.to, context)}`,
+        'Content-Type: text/html; charset=utf-8',
+        `Subject: ${this.interpolateParameters(parameters.subject, context)}`,
+        '',
+        this.interpolateParameters(parameters.body, context)
+      ];
+
+      const email = emailLines.join('\r\n').trim();
+      const encodedEmail = Buffer.from(email)
+        .toString('base64')
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=+$/, '');
+
+      const response = await gmail.users.messages.send({
+        userId: 'me',
+        requestBody: {
+          raw: encodedEmail
+        }
+      });
+
+      return {
+        success: true,
+        messageId: response.data.id,
+        action: 'email_sent',
+        timestamp: new Date().toISOString(),
+        message: 'Email sent successfully via Gmail'
+      };
+
+    } catch (error) {
+      console.error('Gmail execution error:', error);
+      throw new Error(`Gmail API error: ${error.message}`);
+    }
+  }
+
   // REAL SLACK EXECUTION
   async executeSlackNode(node, config, context) {
     const { parameters } = node.data;
     const { webhookUrl } = config;
 
-    if (!webhookUrl || webhookUrl === 'YOUR_WEBHOOK_URL_HERE') {
+    if (!webhookUrl || webhookUrl === 'YOUR_WEBHOOK_URL') {
       throw new Error('Slack webhook URL not configured');
     }
 
     const message = this.interpolateParameters(parameters.message, context);
     const payload = {
       text: message,
-      channel: parameters.channel,
+      channel: parameters.channel || '#general',
       username: parameters.username || 'Workflow Bot'
     };
 
@@ -99,48 +154,12 @@ export class WorkflowExecutor {
     }
   }
 
-  // REAL GMAIL EXECUTION
-  async executeGmailNode(node, config, context) {
-    const { parameters } = node.data;
-    const { tokens } = config;
-
-    if (!tokens || !tokens.access_token) {
-      throw new Error('Gmail not authenticated');
-    }
-
-    const oauth2Client = new google.auth.OAuth2();
-    oauth2Client.setCredentials(tokens);
-
-    const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
-
-    // Send email
-    const message = this.createEmailMessage(
-      parameters.to,
-      this.interpolateParameters(parameters.subject, context),
-      this.interpolateParameters(parameters.body, context)
-    );
-
-    const response = await gmail.users.messages.send({
-      userId: 'me',
-      requestBody: {
-        raw: Buffer.from(message).toString('base64')
-      }
-    });
-
-    return {
-      success: true,
-      messageId: response.data.id,
-      action: 'email_sent',
-      timestamp: new Date().toISOString()
-    };
-  }
-
   // REAL WEBHOOK EXECUTION
   async executeWebhookNode(node, config, context) {
     const { parameters } = node.data;
     const { webhookUrl } = config;
 
-    if (!webhookUrl || webhookUrl === 'YOUR_WEBHOOK_URL_HERE') {
+    if (!webhookUrl || webhookUrl === 'YOUR_WEBHOOK_URL') {
       throw new Error('Webhook URL not configured');
     }
 
@@ -148,12 +167,16 @@ export class WorkflowExecutor {
       ...context,
       timestamp: new Date().toISOString(),
       workflowNode: node.data.label,
-      data: parameters.payload ? JSON.parse(parameters.payload) : {}
+      data: parameters.body ? JSON.parse(parameters.body) : {}
     };
 
     try {
-      const response = await axios.post(webhookUrl, payload, {
-        headers: { 'Content-Type': 'application/json' }
+      const response = await axios({
+        method: parameters.method || 'POST',
+        url: webhookUrl,
+        headers: parameters.headers ? JSON.parse(parameters.headers) : { 'Content-Type': 'application/json' },
+        data: payload,
+        timeout: 10000
       });
 
       return {
@@ -173,19 +196,21 @@ export class WorkflowExecutor {
     const { parameters } = node.data;
     const { host, port, database, username, password } = config;
 
-    if (!host || host === 'localhost' || !database || database === 'your_database') {
-      throw new Error('MySQL database not properly configured');
+    if (!host || !database || !username) {
+      throw new Error('MySQL database configuration incomplete');
     }
 
-    const connection = await mysql.createConnection({
-      host,
-      port: port || 3306,
-      database,
-      user: username,
-      password
-    });
-
+    let connection;
     try {
+      connection = await mysql.createConnection({
+        host,
+        port: port || 3306,
+        database,
+        user: username,
+        password,
+        connectTimeout: 10000
+      });
+
       const query = this.interpolateParameters(parameters.query, context);
       const [rows] = await connection.execute(query);
 
@@ -196,24 +221,51 @@ export class WorkflowExecutor {
         data: rows,
         timestamp: new Date().toISOString()
       };
+    } catch (error) {
+      throw new Error(`MySQL error: ${error.message}`);
     } finally {
-      await connection.end();
+      if (connection) {
+        await connection.end();
+      }
+    }
+  }
+
+  // REAL GOOGLE SHEETS EXECUTION
+  async executeGoogleSheetsNode(node, config, context) {
+    const { parameters } = node.data;
+    const { tokens } = config;
+
+    if (!tokens || !tokens.access_token) {
+      throw new Error('Google Sheets not authenticated');
+    }
+
+    try {
+      const oauth2Client = new google.auth.OAuth2(
+        process.env.GOOGLE_CLIENT_ID,
+        process.env.GOOGLE_CLIENT_SECRET
+      );
+      oauth2Client.setCredentials(tokens);
+
+      const sheets = google.sheets({ version: 'v4', auth: oauth2Client });
+
+      // Example: Read data from sheet
+      const response = await sheets.spreadsheets.values.get({
+        spreadsheetId: parameters.spreadsheetId,
+        range: parameters.range || 'Sheet1!A:Z'
+      });
+
+      return {
+        success: true,
+        action: 'sheet_accessed',
+        data: response.data.values,
+        timestamp: new Date().toISOString()
+      };
+    } catch (error) {
+      throw new Error(`Google Sheets API error: ${error.message}`);
     }
   }
 
   // Helper methods
-  createEmailMessage(to, subject, body) {
-    const email = [
-      `To: ${to}`,
-      'Content-Type: text/html; charset=utf-8',
-      `Subject: ${subject}`,
-      '',
-      body
-    ].join('\n');
-
-    return email;
-  }
-
   interpolateParameters(template, context) {
     if (!template || typeof template !== 'string') return template;
     

@@ -1,3 +1,4 @@
+//src/pages/WorkflowTab/components/CommandSection.jsx
 import React from 'react';
 
 const CommandSection = ({ aiCommands }) => {

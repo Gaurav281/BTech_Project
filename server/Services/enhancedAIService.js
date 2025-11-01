@@ -1,3 +1,4 @@
+//server/Services/enhancedAIService.js
 import axios from 'axios';
 import Integration from '../models/Integration.js';
 
@@ -470,7 +471,7 @@ RULES:
       },
       'gmail': {
         to: '',
-        subject: 'Automated Email',
+        subject: 'Automated gmail @@',
         body: 'This is an automated email from your workflow.'
       },
       'slack': {

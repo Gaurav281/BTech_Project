@@ -1,7 +1,8 @@
 import express from 'express';
 import { authenticateToken } from '../middleware/auth.js';
 import Integration from '../models/Integration.js';
-import  EnhancedAIService  from '../Services/enhancedAIService.js';
+import EnhancedAIService from '../Services/enhancedAIService.js';
+import EnhancedWorkflowService from '../Services/enhancedWorkflowService.js';
 
 const router = express.Router();
 
@@ -10,7 +11,7 @@ const router = express.Router();
  */
 router.post('/generate-complete-workflow', authenticateToken, async (req, res) => {
   try {
-    const { prompt, model = 'deepseek-ai/DeepSeek-R1', userIntegrations = [] } = req.body;
+    const { prompt, model = 'deepseek-ai/DeepSeek-R1' } = req.body;
 
     if (!prompt) {
       return res.status(400).json({
@@ -21,70 +22,52 @@ router.post('/generate-complete-workflow', authenticateToken, async (req, res) =
 
     console.log(`🚀 Generating enhanced workflow for: "${prompt}"`);
 
-    // Get user's integrations from database
-    const dbIntegrations = await Integration.find({ 
+    // Get user integrations
+    const userIntegrations = await Integration.find({ 
       user: req.user._id,
       isActive: true 
     });
 
-    // Generate workflow with integration awareness
-    const workflow = await EnhancedAIService.generateStructuredWorkflow(
+    // Generate workflow with enhanced service
+    const workflow = await EnhancedWorkflowService.generateStructuredWorkflow(
       prompt, 
       model,
-      dbIntegrations
+      userIntegrations
     );
-
-    // Analyze required integrations
-    const requiredServices = extractRequiredServices(workflow.nodes);
-    const missingIntegrations = findMissingIntegrations(requiredServices, dbIntegrations);
-    
-    // Generate integration setup instructions
-    const integrationSetup = await generateIntegrationSetup(missingIntegrations);
 
     res.json({
       success: true,
       workflow,
       prompt,
       modelUsed: model,
-      integrationSetup,
-      missingIntegrations,
       generatedAt: new Date().toISOString()
     });
 
   } catch (error) {
-    console.error('❌ Enhanced workflow generation error:', error);
+    console.error('❌ Workflow generation error:', error);
     
-    // Fallback to rule-based generation
-    try {
-      const fallbackWorkflow = await generateRuleBasedWorkflow(req.body.prompt, req.user._id);
-      
-      res.json({
-        success: true,
-        workflow: fallbackWorkflow,
-        prompt: req.body.prompt,
-        modelUsed: 'rule-based-fallback',
-        integrationSetup: [],
-        missingIntegrations: [],
-        fallbackUsed: true,
-        generatedAt: new Date().toISOString()
-      });
-    } catch (fallbackError) {
-      res.status(500).json({
-        success: false,
-        error: 'Workflow generation failed',
-        details: error.message
-      });
-    }
+    res.status(500).json({
+      success: false,
+      error: 'Workflow generation failed',
+      details: error.message
+    });
   }
 });
 
-
-
+// Get available models
 router.get('/available-models', authenticateToken, (req, res) => {
   try {
+    const models = [
+      'deepseek-ai/DeepSeek-R1',
+      'microsoft/DialoGPT-medium',
+      'microsoft/DialoGPT-large',
+      'distilgpt2',
+      'gpt2'
+    ];
+    
     res.json({
       success: true,
-      models: EnhancedAIService.availableModels,
+      models,
       defaultModel: 'deepseek-ai/DeepSeek-R1'
     });
   } catch (error) {
@@ -113,13 +96,13 @@ router.post('/test-huggingface', authenticateToken, async (req, res) => {
  */
 function extractRequiredServices(nodes) {
   const services = new Set();
-  
+
   nodes.forEach(node => {
     if (node.data.service && node.data.service !== 'trigger') {
       services.add(node.data.service);
     }
   });
-  
+
   return Array.from(services);
 }
 
@@ -128,7 +111,7 @@ function extractRequiredServices(nodes) {
  */
 function findMissingIntegrations(requiredServices, userIntegrations) {
   const missing = [];
-  
+
   requiredServices.forEach(service => {
     const integration = userIntegrations.find(i => i.service === service);
     if (!integration || !integration.isValid) {
@@ -140,7 +123,7 @@ function findMissingIntegrations(requiredServices, userIntegrations) {
       });
     }
   });
-  
+
   return missing;
 }
 
@@ -149,7 +132,7 @@ function findMissingIntegrations(requiredServices, userIntegrations) {
  */
 async function generateIntegrationSetup(missingIntegrations) {
   const setupInstructions = [];
-  
+
   for (const integration of missingIntegrations) {
     const instruction = await generateIntegrationInstruction(integration.service);
     setupInstructions.push({
@@ -158,7 +141,7 @@ async function generateIntegrationSetup(missingIntegrations) {
       priority: getIntegrationPriority(integration.service)
     });
   }
-  
+
   return setupInstructions.sort((a, b) => b.priority - a.priority);
 }
 
@@ -236,7 +219,7 @@ async function generateIntegrationInstruction(service) {
       parameters: ['url', 'method', 'headers', 'body']
     }
   };
-  
+
   return instructions[service] || {
     title: `Setup ${service}`,
     steps: [`Configure ${service} integration in the Integrations tab`],
@@ -257,7 +240,7 @@ function getIntegrationPriority(service) {
     'webhook': 6,
     'google-sheets': 5
   };
-  
+
   return priorities[service] || 1;
 }
 
@@ -268,7 +251,7 @@ async function generateRuleBasedWorkflow(prompt, userId) {
   const lowerPrompt = prompt.toLowerCase();
   const nodes = [];
   const edges = [];
-  
+
   // Always start with trigger
   nodes.push({
     id: 'node-1',

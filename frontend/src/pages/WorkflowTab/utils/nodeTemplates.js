@@ -13,36 +13,19 @@ export const generateNodeWithParameters = (service, stepNumber, position) => {
         parametersConfigured: true
       }
     },
-    'telegram-send': {
+    'telegram': {
       id: `node-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       type: 'custom',
       position,
       data: {
         label: 'Send Telegram Message',
-        service: 'telegram-send',
+        service: 'telegram',
         description: 'Sends message via Telegram bot',
         stepNumber,
         parameters: {
           botToken: '',
           chatId: '',
           message: 'Hello from workflow!'
-        },
-        parametersConfigured: false
-      }
-    },
-    'telegram-monitor': {
-      id: `node-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      type: 'custom',
-      position,
-      data: {
-        label: 'Monitor Telegram',
-        service: 'telegram-monitor',
-        description: 'Listens for Telegram messages',
-        stepNumber,
-        parameters: {
-          botToken: '',
-          chatId: '',
-          keyword: 'alert'
         },
         parametersConfigured: false
       }
@@ -142,8 +125,7 @@ export const generateNodeWithParameters = (service, stepNumber, position) => {
 
 export const getRequiredParameters = (service) => {
   const requirements = {
-    'telegram-send': ['botToken', 'chatId', 'message'],
-    'telegram-monitor': ['botToken', 'chatId', 'keyword'],
+    'telegram': ['botToken', 'chatId', 'message'],
     'gmail': ['to', 'subject', 'body'],
     'slack': ['channel', 'message'],
     'google-sheets': ['spreadsheetId', 'sheetName'],
