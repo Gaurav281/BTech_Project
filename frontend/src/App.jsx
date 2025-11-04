@@ -14,6 +14,8 @@ import Login from './components/Login';
 import Signup from './components/Signup';
 import OAuthCallback from "./pages/OAuthCallback";
 import ScriptTab from "./pages/ScriptTab";
+import HostedWorkflows from './pages/HostedWorkflows';
+import SharedWorkflowView from './pages/SharedWorkflowView';
 
 // Protected Route Component
 const ProtectedRoute = ({ children }) => {
@@ -45,6 +47,22 @@ function App() {
               element={
                 <ProtectedRoute>
                   <WorkflowTab />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/hosted-workflows"
+              element={
+                <ProtectedRoute>
+                  <HostedWorkflows />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/workflow/shared/:id"
+              element={
+                <ProtectedRoute>
+                  <SharedWorkflowView />
                 </ProtectedRoute>
               }
             />

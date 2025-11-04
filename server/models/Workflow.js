@@ -42,6 +42,8 @@ const workflowSchema = new mongoose.Schema({
   tags: [{ type: String }],
   executionCount: { type: Number, default: 0 },
   downloadCount: { type: Number, default: 0 }, // Add download count
+   hostedAt: { type: Date },
+  stoppedAt: { type: Date },
   lastExecuted: { type: Date },
   executionLogs: [executionLogSchema],
   version: { type: Number, default: 1 }

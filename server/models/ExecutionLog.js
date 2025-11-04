@@ -38,7 +38,7 @@ const executionLogSchema = new mongoose.Schema({
   },
   logs: [{
     timestamp: { type: Date, default: Date.now },
-    level: { type: String, enum: ['info', 'warning', 'error'], required: true },
+    level: { type: String, enum: ['info', 'warning', 'error','success'], required: true },
     message: { type: String, required: true },
     nodeId: { type: String }
   }]

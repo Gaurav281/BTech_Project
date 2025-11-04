@@ -1,3 +1,4 @@
+//server/routes/workflowGeneration.js
 import express from 'express';
 import { authenticateToken } from '../middleware/auth.js';
 import Integration from '../models/Integration.js';

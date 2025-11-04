@@ -24,6 +24,7 @@ const Navbar = () => {
   const navigation = [
     { name: 'Home', href: '/', icon: FaHome },
     { name: 'Workflow', href: '/workflow', icon: FaProjectDiagram },
+    { name: 'Hosted Workflows', href: '/hosted-workflows', icon: FaProjectDiagram },
     { name: 'History', href: '/history', icon: FaHistory },
     { name: 'Logs', href: '/logs', icon: FaList },
     { name: 'Integrations', href: '/integrations', icon: FaPlug },

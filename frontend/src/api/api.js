@@ -50,22 +50,22 @@ export const authAPI = {
 export const aiAPI = {
   // Get available AI providers
   getProviders: () => api.get('/ai/providers'),
-  
+
   // Set AI provider
   setProvider: (provider, apiKey = null) => api.post('/ai/set-provider', { provider, apiKey }),
-  
+
   // Generate workflow
   generateWorkflow: (data) => api.post('/ai/generate-workflow', data),
 
   // Generate script
   generateScript: (data) => api.post('/ai/generate-script', data),
-  
+
   // Process command
   processCommand: (commandData) => api.post('/ai/process-command', commandData),
-  
+
   // Test connection - ADD THIS
   testConnection: (provider, apiKey) => api.post('/ai/test-connection', { provider, apiKey }),
-  
+
   // Enhance existing script - ADD THIS
   enhanceScript: (data) => api.post('/ai/enhance-script', data),
 
@@ -82,17 +82,28 @@ export const workflowAPI = {
   deleteWorkflow: (id) => api.delete(`/workflows/${id}`),
   publishWorkflow: (id, isPublic) => api.post(`/workflows/${id}/publish`, { isPublic }),
   downloadWorkflow: (id) => api.post(`/workflows/${id}/download`),
-  
+
   // Execution
   executeWorkflow: (id) => api.post(`/workflows/${id}/execute`),
-  getExecutions: (id) => api.get(`/workflows/${id}/executions`),
   getExecutionLogs: () => api.get('/workflows/executions/logs'),
-  
+  getExecution: (id) => api.get(`/workflows/executions/${id}`),
+  stopExecution: (id) => api.post(`/workflows/executions/${id}/stop`),
+
   // Marketplace
   getPublicWorkflows: () => api.get('/workflows/marketplace/public'),
   useWorkflow: (id) => api.post(`/workflows/marketplace/${id}/use`),
-  
+
+  // Hosting endpoints - FIXED
+  hostWorkflow: (workflowId, data) => api.post(`/workflows/${workflowId}/host`, data),
+  getHostedWorkflows: () => api.get('/workflows/hosted/workflows'),
+  stopHostedWorkflow: (workflowId) => api.post(`/workflows/hosted/${workflowId}/stop`),
+  getSharedWorkflow: (id) => api.get(`/workflows/shared/${id}`),
+
+  // Compatibility methods
+  getHosted: () => api.get('/workflows/hosted/workflows'),
 };
+
+
 export const workflowGenerationAPI = {
   generateCompleteWorkflow: (data) => api.post('/workflow-generation/generate-complete-workflow', data),
   testHuggingFace: () => api.post('/workflow-generation/test-huggingface'),
@@ -116,45 +127,45 @@ export const integrationsAPI = {
 export const scriptAPI = {
   // Generate script
   generateScript: (data) => api.post('/scripts/generate', data),
-  
+
   // Execute script
   executeScript: (data) => api.post('/scripts/execute', data),
-  
+
   // Stop script execution
   stopScript: (executionId) => api.post(`/scripts/stop/${executionId}`),
-  
+
   // Get execution status
   getExecutionStatus: (executionId) => api.get(`/scripts/execution/${executionId}`),
-  
+
   // Save script to history
   saveScript: (data) => api.post('/scripts/save', data),
-  
+
   // Get script history
   getScriptHistory: () => api.get('/scripts/history'),
-  
+
   // Publish script
   publishScript: (data) => api.post('/scripts/publish', data),
-  
+
   // Get public scripts
   getPublicScripts: () => api.get('/scripts/marketplace'),
-  
+
   // Use script from marketplace
   useScript: (id) => api.post(`/scripts/marketplace/${id}/use`),
-  
+
   // Delete script
   deleteScript: (id) => api.delete(`/scripts/${id}`),
 
   installDependencies: (data) => api.post('/scripts/install-dependencies', data),
   getActiveExecutions: () => api.get('/scripts/active'),
   installCustomDependencies: (data) => api.post('/scripts/install-custom-dependencies', data),
-   // Get script execution logs
+  // Get script execution logs
   getScriptExecutionLogs: () => api.get('/scripts/executions/logs'),
-  
+
   // Get script execution details
   getScriptExecution: (executionId) => api.get(`/scripts/executions/${executionId}`),
 
   getPopularScripts: () => api.get('/scripts/marketplace/popular'),
-  
+
   // Search public scripts - ADD THIS
   searchPublicScripts: (params) => api.get('/scripts/marketplace/search', { params }),
 };

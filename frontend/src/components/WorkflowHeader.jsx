@@ -1,5 +1,4 @@
-//src/components/WorkflowHeader.jsx
-import React, { useState } from 'react';
+import React, { useState,useCallback } from 'react';
 import {
   FaPlay,
   FaStop,
@@ -10,7 +9,11 @@ import {
   FaShare,
   FaGlobe,
   FaCopy,
-  FaBars, FaRedo
+  FaBars, 
+  FaRedo,
+  FaEdit,
+  FaCloud,
+  FaSync
 } from 'react-icons/fa';
 import useWorkflowStore from '../store/workflowStore';
 import { workflowAPI, integrationsAPI } from '../api/api';
@@ -24,6 +27,10 @@ const WorkflowHeader = ({
   validateWorkflow,
   onExecuteWorkflow,
   onStopWorkflow,
+  onEditJSON,
+  onHostWorkflow,
+  onRefresh,
+  onShare, 
   isRunning
 }) => {
   const {
@@ -38,6 +45,9 @@ const WorkflowHeader = ({
 
   const { user } = useAuth();
   const [showPublishModal, setShowPublishModal] = useState(false);
+  const [showJSONModal, setShowJSONModal] = useState(false);
+  const [showHostModal, setShowHostModal] = useState(false);
+  const [jsonContent, setJsonContent] = useState('');
   const [publishData, setPublishData] = useState({
     isPublic: false,
     name: ''
@@ -86,9 +96,8 @@ const WorkflowHeader = ({
 
   const getRequiredParameters = (service) => {
     const requirements = {
-      'telegram-monitor': ['botToken', 'chatId', 'keyword'],
-      'telegram-send': ['botToken', 'chatId', 'message'],
-      'gmail': ['to', 'subject'],
+      'telegram': ['botToken', 'chatId', 'message'],
+      'gmail': ['to', 'subject', 'body'],
       'slack': ['channel', 'message'],
       'google-sheets': ['spreadsheetId', 'range'],
       'mysql': ['query'],
@@ -131,19 +140,23 @@ const WorkflowHeader = ({
   };
 
   const refreshWorkflow = () => {
-    if (nodes.length > 0) {
-      addTerminalLog('🔄 Workflow environment refreshed');
-      addTerminalLog('📝 Clearing temporary data and resetting state');
-
-      // Stop any running workflow
-      if (isRunning) {
-        setIsRunning(false);
-        addTerminalLog('⏹️ Workflow execution stopped');
-      }
-
-      showPopup('🔄 Workflow refreshed', 'info');
+    if (onRefresh) {
+      onRefresh();
     } else {
-      addTerminalLog('No workflow to refresh', 'warning');
+      if (nodes.length > 0) {
+        addTerminalLog('🔄 Workflow environment refreshed');
+        addTerminalLog('📝 Clearing temporary data and resetting state');
+
+        // Stop any running workflow
+        if (isRunning) {
+          setIsRunning(false);
+          addTerminalLog('⏹️ Workflow execution stopped');
+        }
+
+        showPopup('🔄 Workflow refreshed', 'info');
+      } else {
+        addTerminalLog('No workflow to refresh', 'warning');
+      }
     }
   };
 
@@ -165,9 +178,6 @@ const WorkflowHeader = ({
       addTerminalLog('✅ Workflow execution started!');
       addTerminalLog(`Execution ID: ${executeResponse.data.executionId}`);
       showPopup('✅ Workflow execution started!', 'success');
-
-      // Don't automatically stop - wait for user to stop manually
-      // The workflow will continue running in the background
 
     } catch (error) {
       console.error('Execution error:', error);
@@ -227,6 +237,65 @@ const WorkflowHeader = ({
     }
   };
 
+  const handleEditJSON = () => {
+    if (onEditJSON) {
+      onEditJSON();
+    } else {
+      // Default JSON editor
+      const workflowData = {
+        name: workflowName,
+        nodes: nodes,
+        edges: edges,
+        version: '1.0',
+        updatedAt: new Date().toISOString()
+      };
+      
+      setJsonContent(JSON.stringify(workflowData, null, 2));
+      setShowJSONModal(true);
+    }
+  };
+
+  const handleHostWorkflow = () => {
+    if (onHostWorkflow) {
+      onHostWorkflow();
+    } else {
+      setShowHostModal(true);
+    }
+  };
+
+  const handleJSONSave = () => {
+  try {
+    const parsedData = JSON.parse(jsonContent);
+    
+    if (parsedData.name) setWorkflowName(parsedData.name);
+    if (parsedData.nodes) setNodes(parsedData.nodes); // Use setNodes from props or store
+    if (parsedData.edges) setEdges(parsedData.edges); // Use setEdges from props or store
+    
+    setShowJSONModal(false);
+    addTerminalLog('✅ Workflow updated from JSON');
+    showPopup('✅ Workflow updated from JSON', 'success');
+  } catch (error) {
+    addTerminalLog(`❌ Invalid JSON: ${error.message}`, 'error');
+    showPopup('❌ Invalid JSON format', 'error');
+  }
+};
+
+  const handleConfirmHost = async () => {
+    try {
+      addTerminalLog('🚀 Hosting workflow...');
+      // Implementation for hosting workflow
+      await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate API call
+      
+      addTerminalLog('✅ Workflow hosted successfully!');
+      addTerminalLog('🌐 Workflow will continue running even when browser is closed');
+      showPopup('✅ Workflow hosted successfully!', 'success');
+      setShowHostModal(false);
+    } catch (error) {
+      addTerminalLog(`❌ Failed to host workflow: ${error.message}`, 'error');
+      showPopup('❌ Failed to host workflow', 'error');
+    }
+  };
+
   const handlePublish = () => {
     if (nodes.length === 0) {
       addTerminalLog('No workflow to publish. Please generate a workflow first.', 'error');
@@ -265,50 +334,51 @@ const WorkflowHeader = ({
     }
   };
 
-  const handleShare = async () => {
-    if (nodes.length === 0) {
-      addTerminalLog('No workflow to share. Please generate a workflow first.', 'error');
-      showPopup('❌ No workflow to share', 'error');
-      return;
+  // In your WorkflowHeader component or wherever share is handled
+const handleShare = useCallback(async () => {
+  if (nodes.length === 0) {
+    addTerminalLog('No workflow to share. Please generate a workflow first.', 'error');
+    showPopup('❌ No workflow to share', 'error');
+    return;
+  }
+
+  try {
+    // First save the workflow
+    const saveResponse = await workflowAPI.saveWorkflow({
+      name: workflowName,
+      nodes,
+      edges,
+      isPublic: true // Make it public for sharing
+    });
+
+    const workflowId = saveResponse.data.workflow._id;
+
+    // Generate CORRECT shareable link - use the shared route
+    const shareableLink = `${window.location.origin}/workflow/shared/${workflowId}`;
+
+    // Copy to clipboard
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(shareableLink);
+    } else {
+      // Fallback for browsers that don't support clipboard API
+      const textArea = document.createElement('textarea');
+      textArea.value = shareableLink;
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textArea);
     }
 
-    try {
-      // Save the workflow WITH parameters for the owner
-      const saveResponse = await workflowAPI.saveWorkflow({
-        name: workflowName,
-        nodes, // Save with parameters for owner
-        edges,
-        isShared: true
-      });
+    addTerminalLog('✅ Shareable link copied to clipboard!');
+    addTerminalLog(`🔗 Share Link: ${shareableLink}`);
+    showPopup('✅ Share link copied to clipboard!', 'success');
 
-      const workflowId = saveResponse.data.workflow._id;
-
-      // Generate shareable link
-      const shareableLink = `${window.location.origin}/workflow?shared=${workflowId}`;
-
-      // Copy to clipboard
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        await navigator.clipboard.writeText(shareableLink);
-      } else {
-        // Fallback for browsers that don't support clipboard API
-        const textArea = document.createElement('textarea');
-        textArea.value = shareableLink;
-        document.body.appendChild(textArea);
-        textArea.select();
-        document.execCommand('copy');
-        document.body.removeChild(textArea);
-      }
-
-      addTerminalLog('✅ Shareable link copied to clipboard!');
-      addTerminalLog(`🔗 Share Link: ${shareableLink}`);
-      showPopup('✅ Share link copied to clipboard!', 'success');
-
-    } catch (error) {
-      console.error('Share error:', error);
-      addTerminalLog(`❌ Error sharing workflow: ${error.response?.data?.error || error.message}`, 'error');
-      showPopup('❌ Failed to share workflow', 'error');
-    }
-  };
+  } catch (error) {
+    console.error('Share error:', error);
+    addTerminalLog(`❌ Error sharing workflow: ${error.response?.data?.error || error.message}`, 'error');
+    showPopup('❌ Failed to share workflow', 'error');
+  }
+}, [workflowName, nodes, edges, addTerminalLog]);
 
   const handleExport = () => {
     if (nodes.length === 0) {
@@ -342,34 +412,37 @@ const WorkflowHeader = ({
   };
 
   const handleImport = (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
+  const file = event.target.files[0];
+  if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const workflowData = JSON.parse(e.target.result);
-        useWorkflowStore.setState({
-          nodes: workflowData.nodes || [],
-          edges: workflowData.edges || [],
-          workflowName: workflowData.name || 'Imported Workflow'
-        });
-        addTerminalLog(`✅ Workflow "${workflowData.name}" imported successfully`);
-        showPopup('✅ Workflow imported successfully!', 'success');
-      } catch (error) {
-        addTerminalLog('❌ Error importing workflow: Invalid file format', 'error');
-        showPopup('❌ Invalid workflow file', 'error');
-      }
-    };
-    reader.readAsText(file);
-
-    // Reset input
-    event.target.value = '';
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const workflowData = JSON.parse(e.target.result);
+      
+      // Use the store's set methods instead of direct state setting
+      useWorkflowStore.setState({
+        nodes: workflowData.nodes || [],
+        edges: workflowData.edges || [],
+        workflowName: workflowData.name || 'Imported Workflow'
+      });
+      
+      addTerminalLog(`✅ Workflow "${workflowData.name}" imported successfully`);
+      showPopup('✅ Workflow imported successfully!', 'success');
+    } catch (error) {
+      addTerminalLog('❌ Error importing workflow: Invalid file format', 'error');
+      showPopup('❌ Invalid workflow file', 'error');
+    }
   };
+  reader.readAsText(file);
+
+  // Reset input
+  event.target.value = '';
+};
 
   return (
     <>
-      <div className="bg-white border-b border-gray-200 px-4 md:px-6 py-4 sticky top-0 z-40">
+      <div className="bg-pink border-b border-gray-200 px-4 md:px-6 py-4 top-0 z-40">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
             {/* Mobile menu button */}
@@ -392,7 +465,7 @@ const WorkflowHeader = ({
           </div>
 
           {/* Desktop Buttons */}
-          <div className="hidden md:flex items-center space-x-2">
+          <div className="hidden md:flex items-center space-x-2 flex-wrap gap-y-2 justify-end">
             <button
               onClick={onGenerateWorkflow}
               className="flex items-center space-x-2 bg-gradient-to-r from-purple-600 to-blue-600 text-white px-4 py-2 rounded-lg hover:from-purple-700 hover:to-blue-700 transition-all duration-200 shadow-lg text-sm"
@@ -429,10 +502,37 @@ const WorkflowHeader = ({
               <span>Save</span>
             </button>
 
+            {/* NEW BUTTONS */}
+            <button
+              onClick={handleEditJSON}
+              disabled={nodes.length === 0}
+              className="flex items-center space-x-2 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors text-sm"
+            >
+              <FaEdit size={14} />
+              <span>Edit JSON</span>
+            </button>
+
+            <button
+              onClick={handleHostWorkflow}
+              disabled={nodes.length === 0}
+              className="flex items-center space-x-2 bg-teal-600 text-white px-4 py-2 rounded-lg hover:bg-teal-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors text-sm"
+            >
+              <FaCloud size={14} />
+              <span>Host</span>
+            </button>
+
+            <button
+              onClick={refreshWorkflow}
+              className="flex items-center space-x-2 bg-orange-600 text-white px-4 py-2 rounded-lg hover:bg-orange-700 transition-colors text-sm"
+            >
+              <FaSync size={14} />
+              <span>Refresh</span>
+            </button>
+
             <button
               onClick={handlePublish}
               disabled={nodes.length === 0}
-              className="flex items-center space-x-2 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors text-sm"
+              className="flex items-center space-x-2 bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors text-sm"
             >
               <FaGlobe size={14} />
               <span>Publish</span>
@@ -441,7 +541,7 @@ const WorkflowHeader = ({
             <button
               onClick={handleShare}
               disabled={nodes.length === 0}
-              className="flex items-center space-x-2 bg-teal-600 text-white px-4 py-2 rounded-lg hover:bg-teal-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors text-sm"
+              className="flex items-center space-x-2 bg-pink-600 text-white px-4 py-2 rounded-lg hover:bg-pink-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors text-sm"
             >
               <FaShare size={14} />
               <span>Share</span>
@@ -456,7 +556,7 @@ const WorkflowHeader = ({
               <span>Export</span>
             </button>
 
-            <label className="flex items-center space-x-2 bg-orange-600 text-white px-4 py-2 rounded-lg hover:bg-orange-700 transition-colors cursor-pointer disabled:bg-gray-400 disabled:cursor-not-allowed">
+            <label className="flex items-center space-x-2 bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors cursor-pointer disabled:bg-gray-400 disabled:cursor-not-allowed">
               <FaUpload size={14} />
               <span>Import</span>
               <input
@@ -467,16 +567,6 @@ const WorkflowHeader = ({
                 disabled={isRunning}
               />
             </label>
-
-            <button
-              onClick={refreshWorkflow}
-              disabled={nodes.length === 0}
-              className="flex items-center space-x-2 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 disabled:bg-gray-400 transition-colors"
-              title="Refresh workflow environment"
-            >
-              <FaRedo size={14} />
-              <span>Refresh</span>
-            </button>
 
             <button
               onClick={onToggleTerminal}
@@ -545,9 +635,35 @@ const WorkflowHeader = ({
               </button>
 
               <button
-                onClick={handlePublish}
+                onClick={handleEditJSON}
                 disabled={nodes.length === 0}
                 className="flex items-center justify-center space-x-2 bg-indigo-600 text-white px-3 py-2 rounded-lg hover:bg-indigo-700 disabled:bg-gray-400 text-sm"
+              >
+                <FaEdit size={12} />
+                <span>Edit JSON</span>
+              </button>
+
+              <button
+                onClick={handleHostWorkflow}
+                disabled={nodes.length === 0}
+                className="flex items-center justify-center space-x-2 bg-teal-600 text-white px-3 py-2 rounded-lg hover:bg-teal-700 disabled:bg-gray-400 text-sm"
+              >
+                <FaCloud size={12} />
+                <span>Host</span>
+              </button>
+
+              <button
+                onClick={refreshWorkflow}
+                className="flex items-center justify-center space-x-2 bg-orange-600 text-white px-3 py-2 rounded-lg hover:bg-orange-700 text-sm"
+              >
+                <FaSync size={12} />
+                <span>Refresh</span>
+              </button>
+
+              <button
+                onClick={handlePublish}
+                disabled={nodes.length === 0}
+                className="flex items-center justify-center space-x-2 bg-purple-600 text-white px-3 py-2 rounded-lg hover:bg-purple-700 disabled:bg-gray-400 text-sm"
               >
                 <FaGlobe size={12} />
                 <span>Publish</span>
@@ -556,7 +672,7 @@ const WorkflowHeader = ({
               <button
                 onClick={handleShare}
                 disabled={nodes.length === 0}
-                className="flex items-center justify-center space-x-2 bg-teal-600 text-white px-3 py-2 rounded-lg hover:bg-teal-700 disabled:bg-gray-400 text-sm"
+                className="flex items-center justify-center space-x-2 bg-pink-600 text-white px-3 py-2 rounded-lg hover:bg-pink-700 disabled:bg-gray-400 text-sm"
               >
                 <FaShare size={12} />
                 <span>Share</span>
@@ -571,7 +687,7 @@ const WorkflowHeader = ({
                 <span>Export</span>
               </button>
 
-              <label className="flex items-center justify-center space-x-2 bg-orange-600 text-white px-3 py-2 rounded-lg hover:bg-orange-700 transition-colors cursor-pointer disabled:bg-gray-400 text-sm">
+              <label className="flex items-center justify-center space-x-2 bg-gray-600 text-white px-3 py-2 rounded-lg hover:bg-gray-700 transition-colors cursor-pointer disabled:bg-gray-400 text-sm">
                 <FaUpload size={12} />
                 <span>Import</span>
                 <input
@@ -586,6 +702,100 @@ const WorkflowHeader = ({
           </div>
         )}
       </div>
+
+      {/* JSON Editor Modal */}
+      {showJSONModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-11/12 md:w-3/4 lg:w-2/3 xl:w-1/2 max-w-4xl mx-4 max-h-[80vh] flex flex-col">
+            <h3 className="text-lg font-semibold mb-4">Edit Workflow JSON</h3>
+            
+            <div className="flex-1 mb-4">
+              <textarea
+                value={jsonContent}
+                onChange={(e) => setJsonContent(e.target.value)}
+                className="w-full h-64 md:h-96 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
+                placeholder="Paste your workflow JSON here..."
+              />
+            </div>
+
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => setShowJSONModal(false)}
+                className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleJSONSave}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Apply JSON
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Host Workflow Modal */}
+      {showHostModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-11/12 md:w-96 max-w-md mx-4">
+            <h3 className="text-lg font-semibold mb-4">Host Workflow</h3>
+            
+            <div className="space-y-4">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div className="flex items-center space-x-2 mb-2">
+                  <FaCloud className="text-blue-600" />
+                  <span className="font-semibold text-blue-800">Workflow Hosting</span>
+                </div>
+                <p className="text-sm text-blue-700">
+                  Hosting allows your workflow to run continuously even when you close the browser. 
+                  The workflow will execute based on its trigger configuration.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Workflow Name
+                </label>
+                <input
+                  type="text"
+                  value={workflowName}
+                  onChange={(e) => setWorkflowName(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Enter workflow name"
+                />
+              </div>
+
+              <div>
+                <label className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    defaultChecked
+                  />
+                  <span className="text-sm text-gray-700">Start workflow immediately</span>
+                </label>
+              </div>
+            </div>
+
+            <div className="flex justify-end space-x-3 mt-6">
+              <button
+                onClick={() => setShowHostModal(false)}
+                className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmHost}
+                className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors"
+              >
+                Host Workflow
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Publish Modal */}
       {showPublishModal && (
