@@ -5,6 +5,8 @@ import { WebClient } from '@slack/web-api';
 import mysql from 'mysql2/promise';
 import axios from 'axios';
 
+import HardwareService from './hardwareService.js';
+
 export class WorkflowExecutor {
   constructor() {
     this.services = {
@@ -14,23 +16,78 @@ export class WorkflowExecutor {
       'google-sheets': this.executeGoogleSheetsNode,
       webhook: this.executeWebhookNode,
       mysql: this.executeMySQLNode,
-      trigger: this.executeTriggerNode
+      trigger: this.executeTriggerNode,
+      'bolt-wifi': this.executeBoltDevice,
+      'temperature-sensor': this.executeTemperatureSensor,
+      'light-sensor': this.executeLightSensor,
+      'push-button': this.executePushButton,
+      'led': this.executeLED,
+      'buzzer': this.executeBuzzer,
+      // New software services
+      'google-forms': this.executeGoogleForms,
+      'whatsapp': this.executeWhatsApp
     };
     this.executionHistory = new Map();
     this.loopCounters = new Map();
     this.MAX_LOOPS = 100; // Prevent infinite loops
   }
 
+  // Add hardware execution methods
+async executeBoltDevice(node, config, context) {
+  const { parameters } = node.data;
+  return await HardwareService.controlBoltDevice(config, parameters.command, parameters.data);
+}
+
+async executeTemperatureSensor(node, config, context) {
+  const { parameters } = node.data;
+  return await HardwareService.readTemperatureSensor({ ...config, ...parameters });
+}
+
+async executeLightSensor(node, config, context) {
+  const { parameters } = node.data;
+  return await HardwareService.readLightSensor({ ...config, ...parameters });
+}
+
+async executeLED(node, config, context) {
+  const { parameters } = node.data;
+  return await HardwareService.controlLED({ ...config, ...parameters });
+}
+
+async executeBuzzer(node, config, context) {
+  const { parameters } = node.data;
+  return await HardwareService.controlBuzzer({ ...config, ...parameters });
+}
+
+// Add new software services
+async executeGoogleForms(node, config, context) {
+  const { parameters } = node.data;
+  const { tokens } = config;
+
+  // Implementation for Google Forms API
+  const forms = google.forms({ version: 'v1', auth: oauth2Client });
+  
+  // Create form, get responses, etc.
+  // This would be implemented based on Google Forms API
+}
+
+async executeWhatsApp(node, config, context) {
+  const { parameters } = node.data;
+  const { apiKey, phoneNumber } = config;
+
+  // Implementation for WhatsApp API
+  // This would use a service like Twilio or WhatsApp Business API
+}
+
   async executeWorkflow(nodes, edges, integrations, onProgress, onLog) {
     const executionId = Date.now().toString();
     this.loopCounters.set(executionId, new Map());
-    
+
     try {
       onLog('🚀 Starting workflow execution...', 'info');
-      
+
       // Find start nodes (nodes with no incoming edges)
       const startNodes = this.findStartNodes(nodes, edges);
-      
+
       if (startNodes.length === 0) {
         throw new Error('No start node found in workflow');
       }
@@ -39,10 +96,10 @@ export class WorkflowExecutor {
       for (const startNode of startNodes) {
         await this.executeNodeTree(startNode, nodes, edges, integrations, executionId, onProgress, onLog);
       }
-      
+
       onLog('✅ Workflow execution completed successfully!', 'success');
       return { success: true, executionId };
-      
+
     } catch (error) {
       onLog(`❌ Workflow execution failed: ${error.message}`, 'error');
       return { success: false, error: error.message, executionId };
@@ -57,17 +114,17 @@ export class WorkflowExecutor {
     }
 
     const nodeId = currentNode.id;
-    
+
     // Check for loops and increment counter
     if (visited.has(nodeId)) {
       const loopKey = `${executionId}-${nodeId}`;
       const currentCount = this.loopCounters.get(executionId).get(loopKey) || 0;
-      
+
       if (currentCount >= this.MAX_LOOPS) {
         onLog(`🛑 Stopping loop execution for node ${currentNode.data.label} after ${this.MAX_LOOPS} iterations`, 'warning');
         return;
       }
-      
+
       this.loopCounters.get(executionId).set(loopKey, currentCount + 1);
       onLog(`🔄 Loop iteration ${currentCount + 1} for node ${currentNode.data.label}`, 'info');
     } else {
@@ -77,25 +134,25 @@ export class WorkflowExecutor {
     // Execute current node
     onProgress(currentNode.id, 'executing');
     onLog(`▶️ Executing: ${currentNode.data.label}`, 'info');
-    
+
     const context = {};
     try {
       const integration = integrations.find(i => i.service === currentNode.data.service);
       const result = await this.executeNode(currentNode, integration?.config || {}, context);
-      
+
       onProgress(currentNode.id, 'success');
       onLog(`✅ ${currentNode.data.label} executed successfully`, 'success');
-      
+
       // Find next nodes based on connections
       const nextNodes = this.findNextNodes(currentNode, nodes, edges);
-      
+
       // Execute all connected nodes (parallel execution)
-      const nextPromises = nextNodes.map(nextNode => 
+      const nextPromises = nextNodes.map(nextNode =>
         this.executeNodeTree(nextNode, nodes, edges, integrations, executionId, onProgress, onLog, new Set(visited), depth + 1)
       );
-      
+
       await Promise.all(nextPromises);
-      
+
     } catch (error) {
       onProgress(currentNode.id, 'error');
       onLog(`❌ ${currentNode.data.label} failed: ${error.message}`, 'error');
@@ -107,8 +164,8 @@ export class WorkflowExecutor {
     // Start nodes are nodes with no incoming edges OR trigger nodes
     const nodesWithIncomingEdges = new Set();
     edges.forEach(edge => nodesWithIncomingEdges.add(edge.target));
-    
-    return nodes.filter(node => 
+
+    return nodes.filter(node =>
       !nodesWithIncomingEdges.has(node.id) || node.data.service === 'trigger'
     );
   }
@@ -122,23 +179,23 @@ export class WorkflowExecutor {
   async executeNode(node, integrationConfig, context = {}) {
     try {
       const service = node.data.service;
-      
+
       if (service === 'trigger') {
         return await this.executeTriggerNode(node, integrationConfig, context);
       }
-      
+
       const executor = this.services[service];
       if (!executor) {
         throw new Error(`No executor found for service: ${service}`);
       }
 
       console.log(`🔧 Executing ${service} node: ${node.data.label}`);
-      
+
       const result = await executor.call(this, node, integrationConfig, context);
-      
+
       console.log(`✅ ${service} node executed successfully`);
       return result;
-      
+
     } catch (error) {
       console.error(`❌ ${node.data.service} execution failed:`, error);
       throw error;
@@ -197,7 +254,7 @@ export class WorkflowExecutor {
         process.env.GOOGLE_CLIENT_ID,
         process.env.GOOGLE_CLIENT_SECRET
       );
-      
+
       oauth2Client.setCredentials(tokens);
 
       const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
@@ -240,86 +297,86 @@ export class WorkflowExecutor {
 
   // REAL GOOGLE SHEETS EXECUTION WITH INTEGRATION DATA
   // In the executeGoogleSheetsNode method, add better error handling:
-async executeGoogleSheetsNode(node, config, context) {
-  const { parameters } = node.data;
-  const { tokens } = config;
+  async executeGoogleSheetsNode(node, config, context) {
+    const { parameters } = node.data;
+    const { tokens } = config;
 
-  if (!tokens || !tokens.access_token) {
-    throw new Error('Google Sheets not authenticated - Please configure Google Sheets integration first');
-  }
-
-  try {
-    const oauth2Client = new google.auth.OAuth2(
-      process.env.GOOGLE_CLIENT_ID,
-      process.env.GOOGLE_CLIENT_SECRET
-    );
-    oauth2Client.setCredentials(tokens);
-
-    const sheets = google.sheets({ version: 'v4', auth: oauth2Client });
-
-    // Use integration data for spreadsheetId if available, otherwise use node parameters
-    const spreadsheetId = config.spreadsheetId || parameters.spreadsheetId;
-    const range = parameters.range || 'Sheet1!A:Z';
-
-    if (!spreadsheetId) {
-      throw new Error('Spreadsheet ID not configured');
+    if (!tokens || !tokens.access_token) {
+      throw new Error('Google Sheets not authenticated - Please configure Google Sheets integration first');
     }
 
-    // Validate spreadsheet ID format
-    if (!this.isValidSpreadsheetId(spreadsheetId)) {
-      throw new Error('Invalid Spreadsheet ID format');
-    }
-
-    // First, try to get spreadsheet info to verify access
     try {
-      const spreadsheetInfo = await sheets.spreadsheets.get({
-        spreadsheetId,
-        fields: 'properties.title,spreadsheetId'
-      });
-      
-      console.log(`✅ Access verified for spreadsheet: ${spreadsheetInfo.data.properties.title}`);
-    } catch (accessError) {
-      if (accessError.code === 404) {
-        throw new Error('Spreadsheet not found. Please check the Spreadsheet ID and ensure it\'s shared with your service account.');
-      } else if (accessError.code === 403) {
-        throw new Error('Access denied. Please ensure the spreadsheet is shared with your service account and the Google Sheets API is enabled.');
+      const oauth2Client = new google.auth.OAuth2(
+        process.env.GOOGLE_CLIENT_ID,
+        process.env.GOOGLE_CLIENT_SECRET
+      );
+      oauth2Client.setCredentials(tokens);
+
+      const sheets = google.sheets({ version: 'v4', auth: oauth2Client });
+
+      // Use integration data for spreadsheetId if available, otherwise use node parameters
+      const spreadsheetId = config.spreadsheetId || parameters.spreadsheetId;
+      const range = parameters.range || 'Sheet1!A:Z';
+
+      if (!spreadsheetId) {
+        throw new Error('Spreadsheet ID not configured');
       }
-      throw accessError;
-    }
 
-    // Example: Read data from sheet
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range
-    });
+      // Validate spreadsheet ID format
+      if (!this.isValidSpreadsheetId(spreadsheetId)) {
+        throw new Error('Invalid Spreadsheet ID format');
+      }
 
-    return {
-      success: true,
-      action: 'sheet_accessed',
-      data: response.data.values,
-      timestamp: new Date().toISOString()
-    };
-  } catch (error) {
-    console.error('Google Sheets API error:', error);
-    
-    // Provide more helpful error messages
-    if (error.code === 404) {
-      throw new Error('Google Sheets API: Spreadsheet not found. Please check the Spreadsheet ID.');
-    } else if (error.code === 403) {
-      throw new Error('Google Sheets API: Access denied. Please check permissions and ensure the spreadsheet is shared.');
-    } else if (error.message.includes('invalid_grant')) {
-      throw new Error('Google Sheets API: Authentication expired. Please reconnect your Google account.');
+      // First, try to get spreadsheet info to verify access
+      try {
+        const spreadsheetInfo = await sheets.spreadsheets.get({
+          spreadsheetId,
+          fields: 'properties.title,spreadsheetId'
+        });
+
+        console.log(`✅ Access verified for spreadsheet: ${spreadsheetInfo.data.properties.title}`);
+      } catch (accessError) {
+        if (accessError.code === 404) {
+          throw new Error('Spreadsheet not found. Please check the Spreadsheet ID and ensure it\'s shared with your service account.');
+        } else if (accessError.code === 403) {
+          throw new Error('Access denied. Please ensure the spreadsheet is shared with your service account and the Google Sheets API is enabled.');
+        }
+        throw accessError;
+      }
+
+      // Example: Read data from sheet
+      const response = await sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range
+      });
+
+      return {
+        success: true,
+        action: 'sheet_accessed',
+        data: response.data.values,
+        timestamp: new Date().toISOString()
+      };
+    } catch (error) {
+      console.error('Google Sheets API error:', error);
+
+      // Provide more helpful error messages
+      if (error.code === 404) {
+        throw new Error('Google Sheets API: Spreadsheet not found. Please check the Spreadsheet ID.');
+      } else if (error.code === 403) {
+        throw new Error('Google Sheets API: Access denied. Please check permissions and ensure the spreadsheet is shared.');
+      } else if (error.message.includes('invalid_grant')) {
+        throw new Error('Google Sheets API: Authentication expired. Please reconnect your Google account.');
+      }
+
+      throw new Error(`Google Sheets API error: ${error.message}`);
     }
-    
-    throw new Error(`Google Sheets API error: ${error.message}`);
   }
-}
 
-// Helper method to validate spreadsheet ID
-isValidSpreadsheetId(spreadsheetId) {
-  // Basic validation for Google Sheets ID format
-  return spreadsheetId && spreadsheetId.length > 5 && !spreadsheetId.includes(' ');
-}
+  // Helper method to validate spreadsheet ID
+  isValidSpreadsheetId(spreadsheetId) {
+    // Basic validation for Google Sheets ID format
+    return spreadsheetId && spreadsheetId.length > 5 && !spreadsheetId.includes(' ');
+  }
 
   // REAL SLACK EXECUTION
   async executeSlackNode(node, config, context) {
@@ -432,7 +489,7 @@ isValidSpreadsheetId(spreadsheetId) {
   // Helper methods
   interpolateParameters(template, context) {
     if (!template || typeof template !== 'string') return template;
-    
+
     return template.replace(/\{\{(\w+)\}\}/g, (match, key) => {
       return context[key] !== undefined ? context[key] : match;
     });
@@ -445,160 +502,84 @@ isValidSpreadsheetId(spreadsheetId) {
 
 
   // server/Services/WorkflowExecutor.js - ENHANCED LOOP EXECUTION
-async executeWorkflowWithLoops(nodes, edges, integrations, onProgress, onLog) {
-  const executionId = Date.now().toString();
-  this.loopCounters.set(executionId, new Map());
-  
-  // Buffer for logs to avoid too many saves
-  const logBuffer = [];
-  const flushLogs = () => {
-    if (logBuffer.length > 0) {
-      logBuffer.forEach(log => onLog(log.message, log.type));
-      logBuffer.length = 0;
-    }
-  };
+  async executeWorkflowWithLoops(nodes, edges, integrations, onProgress, onLog) {
+    const executionId = Date.now().toString();
+    this.loopCounters.set(executionId, new Map());
 
-  try {
-    onLog('🚀 Starting workflow execution with loop detection...', 'info');
-    
-    if (nodes.length === 0) {
-      throw new Error('No nodes in workflow');
-    }
-
-    // Find start nodes
-    const startNodes = this.findStartNodes(nodes, edges);
-    
-    if (startNodes.length === 0) {
-      onLog('⚠️ No explicit start node found, using first node', 'warning');
-      startNodes.push(nodes[0]);
-    }
-
-    onLog(`📋 Found ${startNodes.length} start nodes`, 'info');
-
-    // Create execution context
-    const executionContext = {
-      variables: {},
-      loopData: new Map(),
-      executionId
+    // Buffer for logs to avoid too many saves
+    const logBuffer = [];
+    const flushLogs = () => {
+      if (logBuffer.length > 0) {
+        logBuffer.forEach(log => onLog(log.message, log.type));
+        logBuffer.length = 0;
+      }
     };
 
-    // Execute all start nodes
-    for (const startNode of startNodes) {
-      await this.executeNodeWithLoopDetection(
-        startNode, 
-        nodes, 
-        edges, 
-        integrations, 
-        executionContext,
-        (nodeId, status) => {
-          onProgress(nodeId, status);
-          // Buffer progress logs
-          logBuffer.push({
-            message: `Node ${nodeId} progress: ${status}`,
-            type: 'info'
-          });
-          if (logBuffer.length >= 3) flushLogs();
-        },
-        (message, type = 'info') => {
-          // Buffer regular logs
-          logBuffer.push({ message, type });
-          if (logBuffer.length >= 3 || type === 'error') flushLogs();
-        }
-      );
+    try {
+      onLog('🚀 Starting workflow execution with loop detection...', 'info');
+
+      if (nodes.length === 0) {
+        throw new Error('No nodes in workflow');
+      }
+
+      // Find start nodes
+      const startNodes = this.findStartNodes(nodes, edges);
+
+      if (startNodes.length === 0) {
+        onLog('⚠️ No explicit start node found, using first node', 'warning');
+        startNodes.push(nodes[0]);
+      }
+
+      onLog(`📋 Found ${startNodes.length} start nodes`, 'info');
+
+      // Create execution context
+      const executionContext = {
+        variables: {},
+        loopData: new Map(),
+        executionId
+      };
+
+      // Execute all start nodes
+      for (const startNode of startNodes) {
+        await this.executeNodeWithLoopDetection(
+          startNode,
+          nodes,
+          edges,
+          integrations,
+          executionContext,
+          (nodeId, status) => {
+            onProgress(nodeId, status);
+            // Buffer progress logs
+            logBuffer.push({
+              message: `Node ${nodeId} progress: ${status}`,
+              type: 'info'
+            });
+            if (logBuffer.length >= 3) flushLogs();
+          },
+          (message, type = 'info') => {
+            // Buffer regular logs
+            logBuffer.push({ message, type });
+            if (logBuffer.length >= 3 || type === 'error') flushLogs();
+          }
+        );
+      }
+
+      // Flush any remaining logs
+      flushLogs();
+
+      onLog('✅ Workflow execution completed successfully!', 'success');
+      return { success: true, executionId };
+
+    } catch (error) {
+      flushLogs(); // Ensure error is logged
+      onLog(`❌ Workflow execution failed: ${error.message}`, 'error');
+      return { success: false, error: error.message, executionId };
+    } finally {
+      this.loopCounters.delete(executionId);
     }
-    
-    // Flush any remaining logs
-    flushLogs();
-    
-    onLog('✅ Workflow execution completed successfully!', 'success');
-    return { success: true, executionId };
-    
-  } catch (error) {
-    flushLogs(); // Ensure error is logged
-    onLog(`❌ Workflow execution failed: ${error.message}`, 'error');
-    return { success: false, error: error.message, executionId };
-  } finally {
-    this.loopCounters.delete(executionId);
-  }
-}
-
-async executeNodeWithLoopDetection(currentNode, nodes, edges, integrations, context, onProgress, onLog, visited = new Set(), depth = 0) {
-  // Prevent infinite recursion
-  if (depth > 100) {
-    onLog('🛑 Maximum execution depth reached - stopping potential infinite loop', 'warning');
-    return;
   }
 
-  const nodeId = currentNode.id;
-  
-  // Enhanced loop detection
-  const loopKey = `${context.executionId}-${nodeId}`;
-  const currentCount = this.loopCounters.get(context.executionId).get(loopKey) || 0;
-  
-  if (visited.has(nodeId)) {
-    if (currentCount >= this.MAX_LOOPS) {
-      onLog(`🛑 Stopping loop execution for node ${currentNode.data.label} after ${this.MAX_LOOPS} iterations`, 'warning');
-      return;
-    }
-    
-    this.loopCounters.get(context.executionId).set(loopKey, currentCount + 1);
-    onLog(`🔄 Loop iteration ${currentCount + 1} for node ${currentNode.data.label}`, 'info');
-  } else {
-    visited.add(nodeId);
-  }
-
-  // Execute current node
-  onProgress(currentNode.id, 'executing');
-  onLog(`▶️ Executing: ${currentNode.data.label}`, 'info');
-  
-  try {
-    const integration = integrations.find(i => i.service === currentNode.data.service);
-    const result = await this.executeNode(currentNode, integration?.config || {}, context.variables);
-    
-    // Update context with node results
-    context.variables[`${currentNode.id}_result`] = result;
-    context.variables[`${currentNode.data.service}_result`] = result;
-    
-    onProgress(currentNode.id, 'success');
-    onLog(`✅ ${currentNode.data.label} executed successfully`, 'success');
-    
-    // Find next nodes based on connections
-    const nextNodes = this.findNextNodes(currentNode, nodes, edges);
-    
-    if (nextNodes.length > 0) {
-      onLog(`➡️ Found ${nextNodes.length} connected nodes`, 'info');
-    }
-    
-    // Execute all connected nodes (sequential for proper flow)
-    for (const nextNode of nextNodes) {
-      await this.executeNodeWithLoopDetection(
-        nextNode, 
-        nodes, 
-        edges, 
-        integrations, 
-        context,
-        onProgress, 
-        onLog, 
-        new Set(visited), // New visited set for each branch
-        depth + 1
-      );
-    }
-    
-  } catch (error) {
-    onProgress(currentNode.id, 'error');
-    onLog(`❌ ${currentNode.data.label} failed: ${error.message}`, 'error');
-    throw error;
-  }
-}
-
-// Helper method to find next nodes
-findNextNodes(currentNode, nodes, edges) {
-  const outgoingEdges = edges.filter(edge => edge.source === currentNode.id);
-  const nextNodeIds = outgoingEdges.map(edge => edge.target);
-  return nodes.filter(node => nextNodeIds.includes(node.id));
-}
-
-  async executeNodeTreeWithLoops(currentNode, nodes, edges, integrations, context, onProgress, onLog, visited = new Set(), depth = 0) {
+  async executeNodeWithLoopDetection(currentNode, nodes, edges, integrations, context, onProgress, onLog, visited = new Set(), depth = 0) {
     // Prevent infinite recursion
     if (depth > 100) {
       onLog('🛑 Maximum execution depth reached - stopping potential infinite loop', 'warning');
@@ -606,17 +587,17 @@ findNextNodes(currentNode, nodes, edges) {
     }
 
     const nodeId = currentNode.id;
-    
-    // Enhanced loop detection with context awareness
+
+    // Enhanced loop detection
     const loopKey = `${context.executionId}-${nodeId}`;
     const currentCount = this.loopCounters.get(context.executionId).get(loopKey) || 0;
-    
+
     if (visited.has(nodeId)) {
       if (currentCount >= this.MAX_LOOPS) {
         onLog(`🛑 Stopping loop execution for node ${currentNode.data.label} after ${this.MAX_LOOPS} iterations`, 'warning');
         return;
       }
-      
+
       this.loopCounters.get(context.executionId).set(loopKey, currentCount + 1);
       onLog(`🔄 Loop iteration ${currentCount + 1} for node ${currentNode.data.label}`, 'info');
     } else {
@@ -626,57 +607,134 @@ findNextNodes(currentNode, nodes, edges) {
     // Execute current node
     onProgress(currentNode.id, 'executing');
     onLog(`▶️ Executing: ${currentNode.data.label}`, 'info');
-    
+
     try {
       const integration = integrations.find(i => i.service === currentNode.data.service);
       const result = await this.executeNode(currentNode, integration?.config || {}, context.variables);
-      
+
       // Update context with node results
       context.variables[`${currentNode.id}_result`] = result;
       context.variables[`${currentNode.data.service}_result`] = result;
-      
+
       onProgress(currentNode.id, 'success');
       onLog(`✅ ${currentNode.data.label} executed successfully`, 'success');
-      
+
       // Find next nodes based on connections
       const nextNodes = this.findNextNodes(currentNode, nodes, edges);
-      
+
       if (nextNodes.length > 0) {
         onLog(`➡️ Found ${nextNodes.length} connected nodes`, 'info');
       }
-      
+
       // Execute all connected nodes (sequential for proper flow)
       for (const nextNode of nextNodes) {
-        await this.executeNodeTreeWithLoops(
-          nextNode, 
-          nodes, 
-          edges, 
-          integrations, 
+        await this.executeNodeWithLoopDetection(
+          nextNode,
+          nodes,
+          edges,
+          integrations,
           context,
-          onProgress, 
-          onLog, 
+          onProgress,
+          onLog,
           new Set(visited), // New visited set for each branch
           depth + 1
         );
       }
-      
+
     } catch (error) {
       onProgress(currentNode.id, 'error');
       onLog(`❌ ${currentNode.data.label} failed: ${error.message}`, 'error');
-      
+      throw error;
+    }
+  }
+  
+
+  // Helper method to find next nodes
+  findNextNodes(currentNode, nodes, edges) {
+    const outgoingEdges = edges.filter(edge => edge.source === currentNode.id);
+    const nextNodeIds = outgoingEdges.map(edge => edge.target);
+    return nodes.filter(node => nextNodeIds.includes(node.id));
+  }
+
+  async executeNodeTreeWithLoops(currentNode, nodes, edges, integrations, context, onProgress, onLog, visited = new Set(), depth = 0) {
+    // Prevent infinite recursion
+    if (depth > 100) {
+      onLog('🛑 Maximum execution depth reached - stopping potential infinite loop', 'warning');
+      return;
+    }
+
+    const nodeId = currentNode.id;
+
+    // Enhanced loop detection with context awareness
+    const loopKey = `${context.executionId}-${nodeId}`;
+    const currentCount = this.loopCounters.get(context.executionId).get(loopKey) || 0;
+
+    if (visited.has(nodeId)) {
+      if (currentCount >= this.MAX_LOOPS) {
+        onLog(`🛑 Stopping loop execution for node ${currentNode.data.label} after ${this.MAX_LOOPS} iterations`, 'warning');
+        return;
+      }
+
+      this.loopCounters.get(context.executionId).set(loopKey, currentCount + 1);
+      onLog(`🔄 Loop iteration ${currentCount + 1} for node ${currentNode.data.label}`, 'info');
+    } else {
+      visited.add(nodeId);
+    }
+
+    // Execute current node
+    onProgress(currentNode.id, 'executing');
+    onLog(`▶️ Executing: ${currentNode.data.label}`, 'info');
+
+    try {
+      const integration = integrations.find(i => i.service === currentNode.data.service);
+      const result = await this.executeNode(currentNode, integration?.config || {}, context.variables);
+
+      // Update context with node results
+      context.variables[`${currentNode.id}_result`] = result;
+      context.variables[`${currentNode.data.service}_result`] = result;
+
+      onProgress(currentNode.id, 'success');
+      onLog(`✅ ${currentNode.data.label} executed successfully`, 'success');
+
+      // Find next nodes based on connections
+      const nextNodes = this.findNextNodes(currentNode, nodes, edges);
+
+      if (nextNodes.length > 0) {
+        onLog(`➡️ Found ${nextNodes.length} connected nodes`, 'info');
+      }
+
+      // Execute all connected nodes (sequential for proper flow)
+      for (const nextNode of nextNodes) {
+        await this.executeNodeTreeWithLoops(
+          nextNode,
+          nodes,
+          edges,
+          integrations,
+          context,
+          onProgress,
+          onLog,
+          new Set(visited), // New visited set for each branch
+          depth + 1
+        );
+      }
+
+    } catch (error) {
+      onProgress(currentNode.id, 'error');
+      onLog(`❌ ${currentNode.data.label} failed: ${error.message}`, 'error');
+
       // Check if there are error handling paths
       const errorHandlers = this.findErrorHandlerNodes(currentNode, edges);
       if (errorHandlers.length > 0) {
         onLog(`🔄 Executing ${errorHandlers.length} error handler(s)`, 'info');
         for (const handler of errorHandlers) {
           await this.executeNodeTreeWithLoops(
-            handler, 
-            nodes, 
-            edges, 
-            integrations, 
+            handler,
+            nodes,
+            edges,
+            integrations,
             context,
-            onProgress, 
-            onLog, 
+            onProgress,
+            onLog,
             new Set(visited),
             depth + 1
           );

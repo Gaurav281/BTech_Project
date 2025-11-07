@@ -5,6 +5,9 @@ import NodeSettingsPanel from '../../components/NodeSettingsPanel';
 import TerminalPanel from '../../components/TerminalPanel';
 import useWorkflowStore from '../../store/workflowStore';
 
+import { FaAndroid, FaArrowUp, FaArrowDown } from 'react-icons/fa';
+import TemplatesPanel from '../../components/TemplatesPanle';
+
 // Import custom hooks
 import { useWorkflowGeneration } from './hooks/useWorkflowGeneration';
 import { useAICommands } from './hooks/useAICommands';
@@ -48,6 +51,8 @@ const WorkflowTab = () => {
   const [hostedWorkflows, setHostedWorkflows] = useState([]);
   const [showJSONModal, setShowJSONModal] = useState(false);
   const [jsonContent, setJsonContent] = useState('');
+  const [showTemplates, setShowTemplates] = useState(false);
+  const [showWorkflowInfo, setShowWorkflowInfo] = useState(true);
 
   // Initialize custom hooks
   const workflowGeneration = useWorkflowGeneration();
@@ -56,47 +61,47 @@ const WorkflowTab = () => {
   const workflowValidation = useWorkflowValidation();
   const workflowIntegrations = useWorkflowIntegrations();
 
- // In src/pages/WorkflowTab.jsx - Update handleExecuteWorkflow
-const handleExecuteWorkflow = useCallback(async () => {
-  if (nodes.length === 0) {
-    addTerminalLog('No workflow to execute', 'error');
-    return;
-  }
-
-  setIsRunning(true);
-  setExecutionProgress({});
-  addTerminalLog('🚀 Starting workflow execution...');
-
-  try {
-    // Check if workflow is already saved (has an ID)
-    let workflowId;
-    
-    // If workflow is not saved yet, save it first
-    if (!workflowId) {
-      const saveResponse = await workflowAPI.saveWorkflow({
-        name: workflowName,
-        nodes,
-        edges
-      });
-      workflowId = saveResponse.data.workflow._id;
-      addTerminalLog('💾 Workflow saved before execution');
+  // In src/pages/WorkflowTab.jsx - Update handleExecuteWorkflow
+  const handleExecuteWorkflow = useCallback(async () => {
+    if (nodes.length === 0) {
+      addTerminalLog('No workflow to execute', 'error');
+      return;
     }
 
-    // Execute using backend API
-    const executeResponse = await workflowAPI.executeWorkflow(workflowId);
+    setIsRunning(true);
+    setExecutionProgress({});
+    addTerminalLog('🚀 Starting workflow execution...');
 
-    addTerminalLog('✅ Workflow execution started!');
-    addTerminalLog(`📋 Execution ID: ${executeResponse.data.executionId}`);
-    
-    // Show progress in terminal
-    addTerminalLog('🔄 Workflow is now executing...');
+    try {
+      // Check if workflow is already saved (has an ID)
+      let workflowId;
 
-  } catch (error) {
-    console.error('Workflow execution error:', error);
-    addTerminalLog(`❌ Workflow execution failed: ${error.response?.data?.error || error.message}`, 'error');
-    setIsRunning(false);
-  }
-}, [nodes, edges, workflowName, setIsRunning, addTerminalLog]);
+      // If workflow is not saved yet, save it first
+      if (!workflowId) {
+        const saveResponse = await workflowAPI.saveWorkflow({
+          name: workflowName,
+          nodes,
+          edges
+        });
+        workflowId = saveResponse.data.workflow._id;
+        addTerminalLog('💾 Workflow saved before execution');
+      }
+
+      // Execute using backend API
+      const executeResponse = await workflowAPI.executeWorkflow(workflowId);
+
+      addTerminalLog('✅ Workflow execution started!');
+      addTerminalLog(`📋 Execution ID: ${executeResponse.data.executionId}`);
+
+      // Show progress in terminal
+      addTerminalLog('🔄 Workflow is now executing...');
+
+    } catch (error) {
+      console.error('Workflow execution error:', error);
+      addTerminalLog(`❌ Workflow execution failed: ${error.response?.data?.error || error.message}`, 'error');
+      setIsRunning(false);
+    }
+  }, [nodes, edges, workflowName, setIsRunning, addTerminalLog]);
 
 
   const handleStopWorkflow = useCallback(() => {
@@ -120,7 +125,7 @@ const handleExecuteWorkflow = useCallback(async () => {
       version: '1.0',
       updatedAt: new Date().toISOString()
     };
-    
+
     setJsonContent(JSON.stringify(workflowData, null, 2));
     setShowJSONModal(true);
     addTerminalLog('📝 Opening JSON editor...', 'info');
@@ -129,11 +134,11 @@ const handleExecuteWorkflow = useCallback(async () => {
   const handleJSONSave = useCallback(() => {
     try {
       const parsedData = JSON.parse(jsonContent);
-      
+
       if (parsedData.name) setWorkflowName(parsedData.name);
       if (parsedData.nodes) setNodes(parsedData.nodes);
       if (parsedData.edges) setEdges(parsedData.edges);
-      
+
       setShowJSONModal(false);
       addTerminalLog('✅ Workflow updated from JSON', 'success');
       showPopup('✅ Workflow updated from JSON', 'success');
@@ -152,7 +157,7 @@ const handleExecuteWorkflow = useCallback(async () => {
 
     try {
       addTerminalLog('🌐 Hosting workflow...', 'info');
-      
+
       // First save the workflow
       const saveResponse = await workflowAPI.saveWorkflow({
         name: workflowName,
@@ -161,7 +166,7 @@ const handleExecuteWorkflow = useCallback(async () => {
       });
 
       const workflowId = saveResponse.data.workflow._id;
-      
+
       // Host the workflow (using the backend API)
       const hostResponse = await workflowAPI.hostWorkflow(workflowId, {
         startImmediately: true
@@ -173,12 +178,12 @@ const handleExecuteWorkflow = useCallback(async () => {
         hostedAt: new Date().toISOString(),
         status: 'running'
       };
-      
+
       setHostedWorkflows(prev => [...prev, hostedWorkflow]);
       addTerminalLog('✅ Workflow hosted successfully!', 'success');
       addTerminalLog('🔄 Workflow will continue running even when browser is closed', 'info');
       showPopup('✅ Workflow hosted successfully!', 'success');
-      
+
     } catch (error) {
       console.error('Host workflow error:', error);
       addTerminalLog(`❌ Failed to host workflow: ${error.message}`, 'error');
@@ -189,77 +194,77 @@ const handleExecuteWorkflow = useCallback(async () => {
   // Refresh functionality - FIXED
   const handleRefresh = useCallback(() => {
     addTerminalLog('🔄 Refreshing workflow environment...', 'info');
-    
+
     // Stop any running execution
     if (isRunning) {
       handleStopWorkflow();
     }
-    
+
     // Clear temporary states
     setExecutionProgress({});
-    
+
     // Reload integrations
     workflowIntegrations.loadUserIntegrations();
-    
+
     // Clear terminal logs
     clearTerminalLogs();
-    
+
     addTerminalLog('✅ Workflow environment refreshed', 'success');
     showPopup('🔄 Workflow refreshed', 'info');
   }, [isRunning, handleStopWorkflow, workflowIntegrations, clearTerminalLogs, addTerminalLog]);
 
   // Share functionality - FIXED (restore original behavior)
-const handleShare = useCallback(async () => {
-  if (nodes.length === 0) {
-    addTerminalLog('No workflow to share. Please generate a workflow first.', 'error');
-    showPopup('❌ No workflow to share', 'error');
-    return;
-  }
-
-  try {
-    // First save the workflow
-    const saveResponse = await workflowAPI.saveWorkflow({
-      name: workflowName,
-      nodes,
-      edges,
-      isPublic: true // Make it public for sharing
-    });
-
-    const workflowId = saveResponse.data.workflow._id;
-
-    // Generate CORRECT shareable link - use the shared route
-    const shareableLink = `${window.location.origin}/workflow/shared/${workflowId}`;
-
-    // Copy to clipboard
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      await navigator.clipboard.writeText(shareableLink);
-    } else {
-      // Fallback for browsers that don't support clipboard API
-      const textArea = document.createElement('textarea');
-      textArea.value = shareableLink;
-      document.body.appendChild(textArea);
-      textArea.select();
-      document.execCommand('copy');
-      document.body.removeChild(textArea);
+  const handleShare = useCallback(async () => {
+    if (nodes.length === 0) {
+      addTerminalLog('No workflow to share. Please generate a workflow first.', 'error');
+      showPopup('❌ No workflow to share', 'error');
+      return;
     }
 
-    addTerminalLog('✅ Shareable link copied to clipboard!');
-    addTerminalLog(`🔗 Share Link: ${shareableLink}`);
-    showPopup('✅ Share link copied to clipboard!', 'success');
+    try {
+      // First save the workflow
+      const saveResponse = await workflowAPI.saveWorkflow({
+        name: workflowName,
+        nodes,
+        edges,
+        isPublic: true // Make it public for sharing
+      });
 
-  } catch (error) {
-    console.error('Share error:', error);
-    addTerminalLog(`❌ Error sharing workflow: ${error.response?.data?.error || error.message}`, 'error');
-    showPopup('❌ Failed to share workflow', 'error');
-  }
-}, [workflowName, nodes, edges, addTerminalLog]);
+      const workflowId = saveResponse.data.workflow._id;
+
+      // Generate CORRECT shareable link - use the shared route
+      const shareableLink = `${window.location.origin}/workflow/shared/${workflowId}`;
+
+      // Copy to clipboard
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(shareableLink);
+      } else {
+        // Fallback for browsers that don't support clipboard API
+        const textArea = document.createElement('textarea');
+        textArea.value = shareableLink;
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+      }
+
+      addTerminalLog('✅ Shareable link copied to clipboard!');
+      addTerminalLog(`🔗 Share Link: ${shareableLink}`);
+      showPopup('✅ Share link copied to clipboard!', 'success');
+
+    } catch (error) {
+      console.error('Share error:', error);
+      addTerminalLog(`❌ Error sharing workflow: ${error.response?.data?.error || error.message}`, 'error');
+      showPopup('❌ Failed to share workflow', 'error');
+    }
+  }, [workflowName, nodes, edges, addTerminalLog]);
 
   // Reusable popup function
   const showPopup = (message, type = 'info') => {
     const popup = document.createElement('div');
     const bgColor = type === 'success' ? 'bg-green-500' :
       type === 'error' ? 'bg-red-500' :
-      type === 'warning' ? 'bg-yellow-500' : 'bg-blue-500';
+        type === 'warning' ? 'bg-yellow-500' : 'bg-blue-500';
 
     popup.className = `fixed top-4 right-4 ${bgColor} text-white px-4 py-3 rounded-lg shadow-lg z-50 animate-fade-in-out font-semibold text-sm md:text-base`;
     popup.textContent = message;
@@ -310,7 +315,7 @@ const handleShare = useCallback(async () => {
           <CommandSection aiCommands={aiCommands} />
           <SuggestionsSection workflowGeneration={workflowGeneration} />
           <IntegrationStatus userIntegrations={workflowIntegrations.userIntegrations} />
-          
+
           {/* Execution Progress */}
           {isRunning && Object.keys(executionProgress).length > 0 && (
             <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
@@ -323,11 +328,10 @@ const handleShare = useCallback(async () => {
               <div className="flex flex-wrap gap-2">
                 {nodes.map(node => (
                   <div key={node.id} className="flex items-center space-x-1">
-                    <div className={`w-2 h-2 rounded-full ${
-                      executionProgress[node.id] === 'success' ? 'bg-green-500' :
+                    <div className={`w-2 h-2 rounded-full ${executionProgress[node.id] === 'success' ? 'bg-green-500' :
                       executionProgress[node.id] === 'executing' ? 'bg-yellow-500' :
-                      executionProgress[node.id] === 'error' ? 'bg-red-500' : 'bg-gray-300'
-                    }`} />
+                        executionProgress[node.id] === 'error' ? 'bg-red-500' : 'bg-gray-300'
+                      }`} />
                     <span className="text-xs text-gray-600">{node.data.label}</span>
                   </div>
                 ))}
@@ -337,11 +341,70 @@ const handleShare = useCallback(async () => {
         </div>
       </div>
 
+      {/* Workflow Info Toggle */}
+      <div className="flex justify-between items-center px-4 py-2 bg-gray-50 border-b">
+        <button
+          onClick={() => setShowWorkflowInfo(!showWorkflowInfo)}
+          className="flex items-center space-x-2 text-sm text-gray-600 hover:text-gray-800"
+        >
+          {showWorkflowInfo ? <FaArrowUp size={12} /> : <FaArrowDown size={12} />}
+          <span>Workflow Information</span>
+        </button>
+
+        <button
+          onClick={() => setShowTemplates(!showTemplates)}
+          className={`flex items-center space-x-2 px-3 py-1 rounded-lg text-sm ${showTemplates
+            ? 'bg-blue-600 text-white'
+            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+            }`}
+        >
+          <FaAndroid size={12} />
+          <span>Templates</span>
+        </button>
+      </div>
+
+      {/* Workflow Info Section - Collapsible */}
+      {showWorkflowInfo && (
+        <div className="bg-white border-b border-gray-200 p-4">
+          <div className="max-w-6xl mx-auto">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
+              <div className="text-center p-3 bg-blue-50 rounded-lg">
+                <div className="font-bold text-blue-700 text-lg">{nodes.length}</div>
+                <div className="text-blue-600">Total Nodes</div>
+              </div>
+              <div className="text-center p-3 bg-green-50 rounded-lg">
+                <div className="font-bold text-green-700 text-lg">
+                  {nodes.filter(n => n.data.parametersConfigured).length}
+                </div>
+                <div className="text-green-600">Configured</div>
+              </div>
+              <div className="text-center p-3 bg-yellow-50 rounded-lg">
+                <div className="font-bold text-yellow-700 text-lg">
+                  {nodes.filter(n => n.data.service === 'trigger').length}
+                </div>
+                <div className="text-yellow-600">Triggers</div>
+              </div>
+              <div className="text-center p-3 bg-purple-50 rounded-lg">
+                <div className="font-bold text-purple-700 text-lg">{edges.length}</div>
+                <div className="text-purple-600">Connections</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Main Content Area */}
       <div
         className="flex-1 flex flex-col md:flex-row relative overflow-hidden z-20"
         style={{ minHeight: 'calc(100vh - 200px)' }}
       >
+
+        {/* Templates Panel */}
+        {showTemplates && (
+          <div className="w-80 bg-white border-r border-gray-200 overflow-y-auto">
+            <TemplatesPanel />
+          </div>
+        )}
         {/* React Flow Area */}
         <div className="flex-1 bg-white min-w-0 border-r border-gray-200 relative z-30 overflow-hidden">
           <div className="absolute inset-0">
@@ -379,7 +442,7 @@ const handleShare = useCallback(async () => {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-11/12 md:w-3/4 lg:w-2/3 xl:w-1/2 max-w-4xl mx-4 max-h-[80vh] flex flex-col">
             <h3 className="text-lg font-semibold mb-4">Edit Workflow JSON</h3>
-            
+
             <div className="flex-1 mb-4">
               <textarea
                 value={jsonContent}

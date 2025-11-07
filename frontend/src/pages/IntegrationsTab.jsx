@@ -1,6 +1,10 @@
+//src/pages/IntegrationsTab.jsx
 import React, { useState, useEffect } from 'react';
 import { 
-  FaDesktop, FaMicrochip, FaCode, FaPlus 
+  FaDesktop, FaMicrochip, FaCode, FaPlus, FaBolt, 
+  FaThermometerHalf, FaLightbulb, FaToggleOn, 
+  FaMusic, FaRoad, FaPuzzlePiece, FaGoogle,
+  FaWhatsapp
 } from 'react-icons/fa';
 import { useAuth } from '../context/AuthContext';
 import { integrationsAPI } from '../api/api';
@@ -65,6 +69,147 @@ const IntegrationsTab = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Enhanced availableIntegrations with new hardware and software
+  const enhancedAvailableIntegrations = {
+    software: [
+      ...availableIntegrations.software,
+      {
+        id: 'google-forms',
+        name: 'Google Forms',
+        icon: FaGoogle,
+        description: 'Create and manage Google Forms programmatically',
+        authType: 'OAuth2',
+        category: 'Productivity',
+        type: 'software',
+        scopes: ['https://www.googleapis.com/auth/forms.body'],
+        fields: []
+      },
+      {
+        id: 'whatsapp',
+        name: 'WhatsApp',
+        icon: FaWhatsapp,
+        description: 'Send WhatsApp messages via API',
+        authType: 'API Key',
+        category: 'Communication',
+        type: 'software',
+        fields: [
+          { key: 'apiKey', label: 'API Key', type: 'password', required: true },
+          { key: 'phoneNumber', label: 'Phone Number', type: 'text', required: true }
+        ]
+      }
+    ],
+    hardware: [
+      ...availableIntegrations.hardware,
+      {
+        id: 'bolt-wifi',
+        name: 'Bolt WiFi Module',
+        icon: FaBolt,
+        description: 'Connect and control Bolt IoT WiFi modules',
+        authType: 'API Key',
+        category: 'IoT',
+        type: 'hardware',
+        fields: [
+          { key: 'deviceId', label: 'Device ID', type: 'text', required: true },
+          { key: 'apiKey', label: 'API Key', type: 'password', required: true },
+          { key: 'ssid', label: 'WiFi SSID', type: 'text', required: false },
+          { key: 'password', label: 'WiFi Password', type: 'password', required: false }
+        ]
+      },
+      {
+        id: 'temperature-sensor',
+        name: 'Temperature Sensor',
+        icon: FaThermometerHalf,
+        description: 'Read temperature data from sensors',
+        authType: 'Serial',
+        category: 'Sensors',
+        type: 'hardware',
+        fields: [
+          { key: 'pin', label: 'Sensor Pin', type: 'number', required: true },
+          { key: 'threshold', label: 'Temperature Threshold', type: 'number', required: false }
+        ]
+      },
+      {
+        id: 'light-sensor',
+        name: 'Light Sensor',
+        icon: FaLightbulb,
+        description: 'Monitor ambient light levels',
+        authType: 'Serial',
+        category: 'Sensors',
+        type: 'hardware',
+        fields: [
+          { key: 'pin', label: 'Sensor Pin', type: 'number', required: true },
+          { key: 'threshold', label: 'Light Threshold', type: 'number', required: false }
+        ]
+      },
+      {
+        id: 'push-button',
+        name: 'Push Button Switch',
+        icon: FaToggleOn,
+        description: 'Digital input from push buttons',
+        authType: 'Serial',
+        category: 'Input Devices',
+        type: 'hardware',
+        fields: [
+          { key: 'pin', label: 'Button Pin', type: 'number', required: true },
+          { key: 'pullup', label: 'Pull-up Resistor', type: 'boolean', required: false, default: true }
+        ]
+      },
+      {
+        id: 'led',
+        name: 'LED',
+        icon: FaLightbulb,
+        description: 'Control LED lights',
+        authType: 'Serial',
+        category: 'Output Devices',
+        type: 'hardware',
+        fields: [
+          { key: 'pin', label: 'LED Pin', type: 'number', required: true },
+          { key: 'brightness', label: 'Brightness', type: 'number', required: false, min: 0, max: 255 }
+        ]
+      },
+      {
+        id: 'buzzer',
+        name: 'Buzzer',
+        icon: FaMusic,
+        description: 'Control buzzer for audio feedback',
+        authType: 'Serial',
+        category: 'Output Devices',
+        type: 'hardware',
+        fields: [
+          { key: 'pin', label: 'Buzzer Pin', type: 'number', required: true },
+          { key: 'frequency', label: 'Frequency (Hz)', type: 'number', required: false },
+          { key: 'duration', label: 'Duration (ms)', type: 'number', required: false }
+        ]
+      },
+      {
+        id: 'resistor',
+        name: 'Resistor',
+        icon: FaRoad,
+        description: 'Configure resistors for circuits',
+        authType: 'None',
+        category: 'Components',
+        type: 'hardware',
+        fields: [
+          { key: 'value', label: 'Resistance (Ω)', type: 'number', required: true },
+          { key: 'tolerance', label: 'Tolerance (%)', type: 'number', required: false }
+        ]
+      },
+      {
+        id: 'breadboard',
+        name: 'Breadboard',
+        icon: FaPuzzlePiece,
+        description: 'Breadboard configuration for prototyping',
+        authType: 'None',
+        category: 'Components',
+        type: 'hardware',
+        fields: [
+          { key: 'rows', label: 'Number of Rows', type: 'number', required: true },
+          { key: 'columns', label: 'Number of Columns', type: 'number', required: true }
+        ]
+      }
+    ]
   };
 
   const getIntegrationStatus = (integrationId) => {
@@ -508,8 +653,8 @@ return { success: true, message: 'Operation completed' };`;
               />
             ))
         ) : (
-          // Predefined integrations
-          availableIntegrations[activeTab].map((integration) => {
+          // Predefined integrations - USING ENHANCED LIST
+          enhancedAvailableIntegrations[activeTab].map((integration) => {
             const userIntegration = integrations.find(i => i.service === integration.id);
             const status = getIntegrationStatus(integration.id);
             
