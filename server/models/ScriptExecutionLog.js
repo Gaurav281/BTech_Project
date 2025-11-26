@@ -39,6 +39,7 @@ const scriptExecutionLogSchema = new mongoose.Schema({
   error: { 
     type: String 
   },
+  clientRunId: { type: String, default: null },
   logs: [{
     timestamp: { type: Date, default: Date.now },
     level: { type: String, enum: ['info', 'warning', 'error'], required: true },

@@ -87,10 +87,23 @@ export class AIService {
     }
   }
 
+  validateProvider(provider) {
+  if (!this.providers[provider]) {
+    throw new AIProviderError(provider, 'Unsupported provider');
+  }
+  if (provider !== 'normal' && !this.apiKeys[provider]) {
+    throw new AIProviderError(provider, 'API key not configured');
+  }
+}
+
   async generateScript(task, language, provider = null) {
     // Default provider to OpenAI if nothing is passed
     const selectedProvider = provider || this.currentProvider || 'openai';
     console.log('Generating script using provider:', selectedProvider);
+
+    if (!this.providers[selectedProvider]) {
+      throw new Error(`Unsupported provider: ${selectedProvider}`);
+    }
 
     const logError = (err) => {
       console.error(`[${selectedProvider}] Script Generation Error:`, err?.message || err);
@@ -133,7 +146,7 @@ The script should be ready to run without further modification.
       }
     } catch (err) {
       logError(err);
-      throw new Error('Script generation failed.');
+      throw new Error('Script generation failed.',err);
     }
   }
 

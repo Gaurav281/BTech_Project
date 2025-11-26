@@ -176,6 +176,7 @@ router.post('/:id/execute', authenticateToken, async (req, res) => {
       });
     }
 
+
     // Create execution log
     const executionLog = new ExecutionLog({
       workflow: workflow._id,
@@ -191,8 +192,16 @@ router.post('/:id/execute', authenticateToken, async (req, res) => {
 
     await executionLog.save();
 
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Execution timeout')), 300000) // 5 minutes
+    );
+    await Promise.race([
+      executeWorkflowWithSafeLogging(workflow, req.user._id, executionLog._id),
+      timeoutPromise
+    ]);
+
     // Execute workflow in background WITHOUT parallel saves
-    executeWorkflowWithSafeLogging(workflow, req.user._id, executionLog._id);
+    // executeWorkflowWithSafeLogging(workflow, req.user._id, executionLog._id);
 
     res.json({
       message: 'Workflow execution started',
@@ -200,6 +209,9 @@ router.post('/:id/execute', authenticateToken, async (req, res) => {
     });
 
   } catch (error) {
+    if (error.message === 'Execution timeout') {
+      return res.status(408).json({ error: 'Workflow execution timed out' });
+    }
     console.error('❌ Execute workflow error:', error);
     res.status(500).json({ error: 'Failed to execute workflow' });
   }
@@ -516,6 +528,35 @@ router.get('/shared/:id', async (req, res) => {
     res.status(500).json({ error: 'Internal server error' });
   }
 });
+
+// Download / register workflow download
+router.post('/:id/download', authenticateToken, async (req, res) => {
+  try {
+    console.log('📥 Registering download for workflow:', req.params.id);
+
+    const workflow = await Workflow.findById(req.params.id);
+
+    if (!workflow) {
+      console.log('❌ Workflow not found for download');
+      return res.status(404).json({ error: 'Workflow not found' });
+    }
+
+    // Optional: increment downloadCount
+    workflow.downloadCount = (workflow.downloadCount || 0) + 1;
+    await workflow.save();
+
+    // You don't actually need to send the JSON file from backend,
+    // because you’re already constructing it on the frontend.
+    return res.json({
+      message: 'Download registered successfully',
+      downloadCount: workflow.downloadCount,
+    });
+  } catch (error) {
+    console.error('❌ Download workflow error:', error);
+    return res.status(500).json({ error: 'Failed to register workflow download' });
+  }
+});
+
 
 // ===== HELPER FUNCTIONS =====
 

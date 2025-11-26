@@ -64,6 +64,7 @@ const ScriptTab = () => {
   const [removedParameters, setRemovedParameters] = useState([]);
 
   const executionRef = useRef(null);
+  const seenLogIdsRef = useRef(new Set()); // <-- NEW: track seen log ids to prevent duplicates
   const { user, isAuthenticated } = useAuth();
 
   const languages = [
@@ -183,8 +184,11 @@ const ScriptTab = () => {
         const latestExecution = response.data.executions[0];
         setExecutionId(latestExecution._id);
         setIsExecuting(true);
-        startExecutionMonitoring(latestExecution._id);
-        addLog('🔄 Resumed monitoring of active script execution');
+         // ensure we don't start duplicate monitoring
+        if (!executionRef.current) {
+          startExecutionMonitoring(latestExecution._id);
+          addLog('🔄 Resumed monitoring of active script execution');
+        }
       }
     } catch (error) {
       console.error('Failed to check active executions:', error);
@@ -481,14 +485,29 @@ const ScriptTab = () => {
     }
   };
 
-  const addLog = (message, type = 'info') => {
+  const addLog = (message, type = 'info', id = null, timestamp = null) => {
+    // Build a stable id for deduplication:
+    const logId = id || `${timestamp || Date.now()}-${message.slice(0, 200)}`;
+
+    // If we've already seen this log id, do nothing
+    if (seenLogIdsRef.current.has(logId)) return;
+
+    // Mark seen
+    seenLogIdsRef.current.add(logId);
+
     const log = {
-      id: Date.now(),
-      timestamp: new Date().toISOString(),
+      id: logId,
+      timestamp: timestamp || new Date().toISOString(),
       message,
       type
     };
-    setExecutionLogs(prev => [...prev.slice(-99), log]); // Keep last 100 logs
+
+    // Use functional update to avoid stale closures and keep only last 100 logs
+    setExecutionLogs(prev => {
+      const next = [...prev.slice(-99), log];
+      // Save to localStorage through your existing saveState side effect
+      return next;
+    });
   };
 
   const loadScriptHistory = async () => {
@@ -732,7 +751,7 @@ const ScriptTab = () => {
     }
   };
 
-  // In ScriptTab.jsx - UPDATE the executeScript function
+  // Replace your existing executeScript() with this function
   const executeScript = async () => {
     if (!modifiedScript.trim()) {
       addLog('No script to execute', 'error');
@@ -744,7 +763,7 @@ const ScriptTab = () => {
       return;
     }
 
-    // Get only the parameters that are actually detected as required
+    // Determine required parameters (only those that appear as input/template/empty assignments)
     const requiredParams = detectedParameters.filter(param => {
       // Check if this parameter is actually used in a way that requires user input
       const isInputCall = new RegExp(`input\\s*\\([^)]*${param}[^)]*\\)`, 'i').test(modifiedScript);
@@ -754,7 +773,7 @@ const ScriptTab = () => {
       return isInputCall || isTemplateVar || isEmptyAssignment;
     });
 
-    // Check for missing parameters (only from required ones)
+    // Check for missing parameter values (only from required ones)
     const missing = requiredParams.filter(param => !parameters[param] || parameters[param].trim() === '');
 
     if (missing.length > 0) {
@@ -769,7 +788,7 @@ const ScriptTab = () => {
     addLog('🚀 Starting script execution...');
 
     try {
-      // Only pass parameters that are actually required
+      // Build executionParams: only include required params that have values
       const executionParams = {};
       requiredParams.forEach(param => {
         if (parameters[param] && parameters[param].trim() !== '') {
@@ -777,10 +796,22 @@ const ScriptTab = () => {
         }
       });
 
+      // Optional: add clientRunId to help backend idempotency
+      const clientRunId = crypto && crypto.randomUUID ? crypto.randomUUID() : `run-${Date.now()}`;
+
+      // Add explicit ordered stdin array (recommended)
+      // This helps the server feed input() calls deterministically.
+      // It uses detectedParameters order (best-effort). If you prefer a manual order,
+      // you can build this array via a dedicated UI.
+      if (detectedParameters && detectedParameters.length > 0) {
+        executionParams.__stdin__ = detectedParameters.map(p => parameters[p] || '');
+      }
+
       const response = await scriptAPI.executeScript({
         script: modifiedScript,
         language,
-        parameters: executionParams
+        parameters: executionParams,
+        clientRunId // <-- helpful for backend dedupe
       });
 
       const execId = response.data.executionId;
@@ -789,17 +820,25 @@ const ScriptTab = () => {
       addLog('✅ Script execution started!');
       addLog(`📋 Execution ID: ${execId}`);
       if (Object.keys(executionParams).length > 0) {
-        addLog(`⚙️ Using parameters: ${JSON.stringify(executionParams)}`);
+        // Avoid logging the entire __stdin__ array separately for cleanliness
+        const paramsToShow = { ...executionParams };
+        if (paramsToShow.__stdin__) {
+          paramsToShow.__stdin__ = '[ordered stdin values]';
+        }
+        addLog(`⚙️ Using parameters: ${JSON.stringify(paramsToShow)}`);
       }
 
-      // Start monitoring execution
-      startExecutionMonitoring(execId);
+       // Start monitoring execution (dedupe-safe)
+      if (!executionRef.current) {
+        startExecutionMonitoring(execId);
+      }
 
     } catch (error) {
       addLog(`❌ Execution failed to start: ${error.message}`, 'error');
       setIsExecuting(false);
     }
   };
+
 
   // ENHANCE SCRIPT - WITH PARAMETER PRESERVATION
   const enhanceScript = async () => {
@@ -878,19 +917,23 @@ const ScriptTab = () => {
     // Clear any existing monitoring
     if (executionRef.current) {
       clearInterval(executionRef.current);
+      executionRef.current = null;
     }
 
-    // Start new monitoring
+    // Poll
     executionRef.current = setInterval(async () => {
       try {
         const response = await scriptAPI.getExecutionStatus(execId);
         const status = response.data.status;
 
-        // Update logs with execution progress
-        if (response.data.logs) {
+        // Update logs with execution progress - dedupe by _id or fallback
+        if (response.data.logs && Array.isArray(response.data.logs)) {
           response.data.logs.forEach(log => {
-            if (!executionLogs.some(existingLog => existingLog.id === log._id)) {
-              addLog(log.message, log.level);
+            // server logs might use _id or id or timestamp+message
+            const remoteId = log._id || log.id || `${log.timestamp || ''}-${(log.message || '').slice(0, 200)}`;
+            // Only add if not seen
+            if (!seenLogIdsRef.current.has(remoteId)) {
+              addLog(log.message, log.level || 'info', remoteId, log.timestamp);
             }
           });
         }
@@ -912,12 +955,11 @@ const ScriptTab = () => {
             addLog('🛑 Script execution stopped by user');
           }
         }
-
       } catch (error) {
-        console.error('Error monitoring execution:', error);
-        // Don't add log to avoid spam
+        // If monitoring fails, just log a one-off message and continue (avoid spamming)
+        // console.error('Error monitoring execution:', error);
       }
-    }, 2000); // Check every 2 seconds
+    }, 2000); // keep 2s
   };
 
   const handleParameterChange = (paramName, value) => {
@@ -1160,8 +1202,18 @@ const ScriptTab = () => {
 
   const clearTerminal = () => {
     setExecutionLogs([]);
+    seenLogIdsRef.current.clear();
     addLog('Terminal cleared');
   };
+
+  // When resuming previous logs (e.g. on mount), mark them as seen
+  useEffect(() => {
+    // initialize seenLogIdsRef with existing logs so monitor doesn't re-add
+    executionLogs.forEach(log => {
+      if (log.id) seenLogIdsRef.current.add(log.id);
+      else seenLogIdsRef.current.add(`${log.timestamp}-${(log.message || '').slice(0, 200)}`);
+    });
+  }, []); // run once on mount
 
   // CLEAR ALL DATA
   const clearAllData = () => {
